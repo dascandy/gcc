@@ -2574,7 +2574,7 @@ static vec<tree, va_gc> *cp_parser_parenthesized_expression_list
    bool = false);
 /* Values for the second parameter of cp_parser_parenthesized_expression_list.  */
 enum { non_attr = 0, normal_attr = 1, id_attr = 2, assume_attr = 3,
-       uneval_string_attr = 4 };
+       uneval_string_attr = 4, subset_attr = 5 };
 static void cp_parser_pseudo_destructor_name
   (cp_parser *, tree, tree *, tree *);
 static cp_expr cp_parser_unary_expression
@@ -4949,6 +4949,28 @@ cp_parser_identifier (cp_parser* parser)
     return error_mark_node;
 }
 
+/* The locations of the tokens that a subset disallowed, so that a token is
+   diagnosed once even if tentative parsing parses it more than once.  */
+
+static hash_set<int_hash<location_t, UNKNOWN_LOCATION, BUILTINS_LOCATION> >
+  *cp_parser_subset_tokens;
+
+/* Return true if subset GROUP disallows the token at LOC, and it was not
+   diagnosed yet.  */
+
+static bool
+cp_parser_subset_disallows_token_p (const char *group, location_t loc)
+{
+  loc = get_pure_location (loc);
+  if (!subset_active_at_p (get_identifier (group), loc))
+    return false;
+  if (!cp_parser_subset_tokens)
+    cp_parser_subset_tokens
+      = new hash_set<int_hash<location_t, UNKNOWN_LOCATION,
+			      BUILTINS_LOCATION> >;
+  return !cp_parser_subset_tokens->add (loc);
+}
+
 /* Worker for cp_parser_string_literal, cp_parser_userdef_string_literal
    and cp_parser_unevaluated_string_literal.
    Do not call this directly; use either of the above.
@@ -5126,6 +5148,9 @@ cp_parser_string_literal_common (cp_parser *parser, bool translate,
       cp_parser_error (parser, "a wide string is invalid in this context");
       type = CPP_STRING;
     }
+  if (type == CPP_WSTRING
+      && cp_parser_subset_disallows_token_p ("no_wchar_t", loc))
+    error_at (loc, "wide string literal in subset %<no_wchar_t%>");
   if (uneval)
     type = CPP_UNEVAL_STRING;
 
@@ -5289,6 +5314,10 @@ static cp_expr
 cp_parser_userdef_char_literal (cp_parser *parser)
 {
   cp_token *token = cp_lexer_consume_token (parser->lexer);
+  if (token->type == CPP_WCHAR_USERDEF
+      && cp_parser_subset_disallows_token_p ("no_wchar_t", token->location))
+    error_at (token->location,
+	      "wide character literal in subset %<no_wchar_t%>");
   tree literal = token->u.value;
   tree suffix_id = USERDEF_LITERAL_SUFFIX_ID (literal);
   tree value = USERDEF_LITERAL_VALUE (literal);
@@ -6716,6 +6745,11 @@ cp_parser_primary_expression (cp_parser *parser,
       if (TREE_CODE (token->u.value) == USERDEF_LITERAL)
 	return cp_parser_userdef_numeric_literal (parser);
       token = cp_lexer_consume_token (parser->lexer);
+      if (token->type == CPP_WCHAR
+	  && cp_parser_subset_disallows_token_p ("no_wchar_t",
+						 token->location))
+	error_at (token->location,
+		  "wide character literal in subset %<no_wchar_t%>");
       if (TREE_CODE (token->u.value) == FIXED_CST)
 	{
 	  error_at (token->location,
@@ -8486,6 +8520,34 @@ literal_integer_zerop (const_tree expr)
 	  && integer_zerop (TREE_OPERAND (expr, 0)));
 }
 
+/* Give an error if subset raw_new_delete is active and FN, called at LOC,
+   names operator new, operator delete, operator new[] or operator
+   delete[].  */
+
+static void
+cp_parser_check_raw_new_delete_call (location_t loc, tree fn)
+{
+  fn = tree_strip_any_location_wrapper (fn);
+  if (TREE_CODE (fn) == COMPONENT_REF)
+    fn = TREE_OPERAND (fn, 1);
+  if (BASELINK_P (fn))
+    fn = BASELINK_FUNCTIONS (fn);
+  if (TREE_CODE (fn) == SCOPE_REF)
+    fn = TREE_OPERAND (fn, 1);
+  if (TREE_CODE (fn) == TEMPLATE_ID_EXPR)
+    fn = TREE_OPERAND (fn, 0);
+  tree name;
+  if (identifier_p (fn))
+    name = fn;
+  else if (OVL_P (fn) || TREE_CODE (fn) == FUNCTION_DECL)
+    name = OVL_NAME (fn);
+  else
+    return;
+  if (IDENTIFIER_NEWDEL_OP_P (name)
+      && subset_active_at_p (get_identifier ("raw_new_delete"), loc))
+    error_at (loc, "call to %qE in subset %<raw_new_delete%>", name);
+}
+
 /* Parse a postfix-expression.
 
    postfix-expression:
@@ -8614,6 +8676,13 @@ cp_parser_postfix_expression (cp_parser *parser, bool address_p, bool cast_p,
 	   ranging from the start of the "*_cast" token to the final closing
 	   paren, with the caret at the start.  */
 	location_t cp_cast_loc = make_location (start_loc, start_loc, end_loc);
+
+	/* The subsets reinterpret_cast, const_cast and dynamic_cast are
+	   named after the cast they disallow.  */
+	if (keyword != RID_STATCAST
+	    && subset_active_at_p (ridpointers[keyword], cp_cast_loc))
+	  error_at (cp_cast_loc, "use of %qE in subset %qE",
+		    ridpointers[keyword], ridpointers[keyword]);
 
 	switch (keyword)
 	  {
@@ -9274,6 +9343,9 @@ cp_parser_postfix_expression (cp_parser *parser, bool address_p, bool cast_p,
 	      combined_loc = make_location (token->location, start_loc,
 					    close_paren_loc);
 	    iloc_sentinel ils (combined_loc);
+
+	    cp_parser_check_raw_new_delete_call (input_location,
+						 postfix_expression);
 
 	    if (TREE_CODE (postfix_expression) == OFFSET_REF
 		|| TREE_CODE (postfix_expression) == MEMBER_REF
@@ -9976,7 +10048,8 @@ cp_parser_postfix_dot_deref_expression (cp_parser *parser,
    expressions.  The parentheses are eaten.  IS_ATTRIBUTE_LIST is id_attr
    if we are parsing an attribute list for an attribute that wants a
    plain identifier argument, normal_attr for an attribute that wants
-   an expression, or non_attr if we aren't parsing an attribute list.  If
+   an expression, subset_attr for a subset attribute, or
+   non_attr if we aren't parsing an attribute list.  If
    NON_CONSTANT_P is non-NULL, *NON_CONSTANT_P indicates whether or
    not all of the expressions in the list were constant.
    If CLOSE_PAREN_LOC is non-NULL, and no errors occur, then *CLOSE_PAREN_LOC
@@ -10025,6 +10098,13 @@ cp_parser_parenthesized_expression_list (cp_parser* parser,
 	   next token is an identifier.  */
 	if (is_attribute_list == id_attr
 	    && cp_lexer_next_token_is (parser->lexer, CPP_NAME))
+	  expr = cp_lexer_consume_token (parser->lexer)->u.value;
+	else if (is_attribute_list == subset_attr
+		 && (cp_lexer_next_token_is (parser->lexer, CPP_NAME)
+		     || cp_lexer_next_token_is (parser->lexer, CPP_KEYWORD))
+		 && (cp_lexer_nth_token_is (parser->lexer, 2, CPP_COMMA)
+		     || cp_lexer_nth_token_is (parser->lexer, 2,
+					       CPP_CLOSE_PAREN)))
 	  expr = cp_lexer_consume_token (parser->lexer)->u.value;
 	else if (is_attribute_list == assume_attr)
 	  expr = cp_parser_conditional_expression (parser);
@@ -10075,8 +10155,9 @@ cp_parser_parenthesized_expression_list (cp_parser* parser,
 	  goto skip_comma;
 
 	/* After the first item, attribute lists look the same as
-	   expression lists.  */
-	is_attribute_list = non_attr;
+	   expression lists, except for a subset attribute.  */
+	if (is_attribute_list != subset_attr)
+	  is_attribute_list = non_attr;
 
       get_comma:;
 	/* If the next token isn't a `,', then we are done.  */
@@ -11099,6 +11180,9 @@ cp_parser_new_expression (cp_parser* parser)
          at the end of the final token we consumed.  */
       location_t combined_loc = make_location (start_loc, start_loc,
 					       parser->lexer);
+      if (subset_active_at_p (get_identifier ("raw_new_delete"), combined_loc))
+	error_at (combined_loc, "%qs expression in subset %<raw_new_delete%>",
+		  nelts || TREE_CODE (type) == ARRAY_TYPE ? "new[]" : "new");
       /* Create a representation of the new-expression.  */
       ret = build_new (combined_loc, &placement, type, nelts, &initializer,
 		       global_scope_p, tf_warning_or_error);
@@ -11408,6 +11492,9 @@ cp_parser_delete_expression (cp_parser* parser)
      the end at the end of the final token we consumed.  */
   location_t combined_loc = make_location (start_loc, start_loc,
 					   parser->lexer);
+  if (subset_active_at_p (get_identifier ("raw_new_delete"), combined_loc))
+    error_at (combined_loc, "%qs expression in subset %<raw_new_delete%>",
+	      array_p ? "delete[]" : "delete");
   expression = delete_sanity (combined_loc, expression, NULL_TREE, array_p,
 			      global_scope_p, tf_warning_or_error);
 
@@ -22977,6 +23064,9 @@ cp_parser_simple_type_specifier (cp_parser* parser,
       break;
     case RID_WCHAR:
       type = wchar_type_node;
+      if (cp_parser_subset_disallows_token_p ("no_wchar_t", token->location))
+	error_at (token->location, "use of %<wchar_t%> in subset "
+		  "%<no_wchar_t%>");
       break;
     case RID_BOOL:
       type = boolean_type_node;
@@ -33896,16 +33986,22 @@ cp_parser_std_attribute (cp_parser *parser, tree attr_ns)
       && is_attribute_p ("subset", attr_ns)
       && is_attribute_p ("define", attr_id))
     {
-      /* The arguments are subset group names.  */
+      /* The arguments are subset group names, which can be keywords, such
+	 as reinterpret_cast.  */
+      auto name_p = [parser] (size_t n)
+	{
+	  return (cp_lexer_nth_token_is (parser->lexer, n, CPP_NAME)
+		  || cp_lexer_nth_token_is (parser->lexer, n, CPP_KEYWORD));
+	};
       cp_lexer_consume_token (parser->lexer);
       tree names = NULL_TREE;
-      while (cp_lexer_next_token_is (parser->lexer, CPP_NAME))
+      while (name_p (1))
 	{
 	  names = tree_cons (NULL_TREE,
 			     cp_lexer_consume_token (parser->lexer)->u.value,
 			     names);
 	  if (cp_lexer_next_token_is_not (parser->lexer, CPP_COMMA)
-	      || !cp_lexer_nth_token_is (parser->lexer, 2, CPP_NAME))
+	      || !name_p (2))
 	    break;
 	  cp_lexer_consume_token (parser->lexer);
 	}
@@ -33954,8 +34050,8 @@ cp_parser_std_attribute (cp_parser *parser, tree attr_ns)
 	     && (is_attribute_p ("remove", attr_id)
 		 || is_attribute_p ("activate", attr_id)
 		 || is_attribute_p ("suppress", attr_id)))
-      /* The subset group is an identifier.  */
-      attr_flag = id_attr;
+      /* The subset groups are identifiers or keywords.  */
+      attr_flag = subset_attr;
     else if (attr_ns == NULL_TREE
 	     && cxx_dialect >= cxx26
 	     && (is_attribute_p ("deprecated", attr_id)

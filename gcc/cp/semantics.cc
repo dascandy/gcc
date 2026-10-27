@@ -13875,13 +13875,18 @@ init_cp_semantics (void)
   subset_add_known (get_identifier ("pointer_arithmetic"));
   subset_add_known (get_identifier ("binary_op_on_bool"));
   subset_add_known (get_identifier ("no_boolean_ordering"));
+  subset_add_known (get_identifier ("raw_new_delete"));
   subset_add_known (get_identifier ("no_goto"));
+  subset_add_known (get_identifier ("no_wchar_t"));
   subset_add_known (get_identifier ("no_mixed_switch"));
   subset_add_known (get_identifier ("variadic_functions"));
   /* An operator_boolean_binary_overload entry appears twice; adding it
      again is harmless.  */
   for (const auto &op : subset_operators)
     subset_add_known (get_identifier (op.subset));
+  subset_add_known (get_identifier ("reinterpret_cast"));
+  subset_add_known (get_identifier ("const_cast"));
+  subset_add_known (get_identifier ("dynamic_cast"));
 }
 
 
