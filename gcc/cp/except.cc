@@ -625,6 +625,37 @@ wrap_cleanups_r (tree *tp, int *walk_subtrees, void * /*data*/)
   return NULL_TREE;
 }
 
+/* Give an error if COMPLAIN allows it, subset throw_non_std_exception is
+   active and EXP, the operand of a throw expression at LOC, is not an
+   object of a class derived from std::exception.  */
+
+static void
+check_throw_std_exception (location_t loc, tree exp, tsubst_flags_t complain)
+{
+  if (!(complain & tf_error)
+      || !subset_active_at_p (get_identifier ("throw_non_std_exception"),
+			      loc))
+    return;
+
+  tree type = cv_unqualified (type_decays_to (TREE_TYPE (exp)));
+  tree std_exc = lookup_qualified_name (std_node, "exception",
+					LOOK_want::TYPE, /*complain=*/false);
+  bool declared = TREE_CODE (std_exc) == TYPE_DECL;
+  if (declared
+      && CLASS_TYPE_P (type)
+      && DERIVED_FROM_P (TREE_TYPE (std_exc), type))
+    return;
+
+  auto_diagnostic_group d;
+  error_at (loc, "throwing %qT, which is not derived from "
+	    "%<std::exception%>, in subset %<throw_non_std_exception%>",
+	    type);
+  if (!declared)
+    inform (loc, "subset %<throw_non_std_exception%> only allows throwing "
+	    "objects of classes derived from %<std::exception%>, which is "
+	    "not declared; include %<<exception>%>");
+}
+
 /* Build a throw expression.  */
 
 tree
@@ -650,6 +681,9 @@ build_throw (location_t loc, tree exp, tsubst_flags_t complain)
 							      /*is_throw=*/true,
 							      complain))
     return error_mark_node;
+
+  if (exp)
+    check_throw_std_exception (loc, exp, complain);
 
   if (! doing_eh ())
     return error_mark_node;

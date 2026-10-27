@@ -13594,6 +13594,8 @@ build_transaction_expr (location_t loc, tree expr, int flags, tree noex)
 void
 init_cp_semantics (void)
 {
+  /* The predefined subsets.  */
+  subset_add_known (get_identifier ("throw_non_std_exception"));
 }
 
 
