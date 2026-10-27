@@ -660,6 +660,7 @@ cp_common_init_ts (void)
   MARK_TS_EXP (TEMPLATE_FOR_STMT);
   MARK_TS_EXP (TRY_BLOCK);
   MARK_TS_EXP (USING_STMT);
+  MARK_TS_EXP (SUBSET_STMT);
 
   /* Random expressions.  */
   MARK_TS_EXP (ADDRESSOF_EXPR);

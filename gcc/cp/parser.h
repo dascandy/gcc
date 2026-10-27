@@ -125,6 +125,10 @@ struct GTY (()) cp_lexer {
   /* True for in_omp_attribute_pragma lexer that should be destroyed
      when it is no longer in use.  */
   bool orphan_p;
+
+  /* For a lexer pushed by cp_parser_push_lexer_for_tokens, the active set
+     of subsets to restore when it is popped.  */
+  tree saved_subset_state;
 };
 
 
@@ -140,6 +144,10 @@ struct GTY(()) cp_token_cache {
 
   /* Points immediately after the last token in the range.  */
   cp_token * GTY ((skip)) last;
+
+  /* The active set of subsets where the tokens appeared, to use when they
+     are parsed.  */
+  tree subset_state;
 };
 
 typedef cp_token_cache *cp_token_cache_ptr;

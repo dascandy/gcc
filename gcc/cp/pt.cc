@@ -12968,6 +12968,11 @@ instantiate_class_template (tree type)
 
   maybe_diagnose_erroneous_template (t ? TI_TEMPLATE (t) : templ);
 
+  /* Use the active subsets of the definition of the template.  */
+  auto ss = make_temp_override (current_subset_state,
+				subset_template_state (t ? TI_TEMPLATE (t)
+						       : templ));
+
   bool push_to_top = maybe_push_to_top_level (TYPE_MAIN_DECL (type));
 
   mark_template_arguments_used (templ, CLASSTYPE_TI_ARGS (type));
@@ -13174,7 +13179,8 @@ instantiate_class_template (tree type)
 	  else
 	    {
 	      /* Build new TYPE_FIELDS.  */
-              if (TREE_CODE (t) == STATIC_ASSERT)
+              if (TREE_CODE (t) == STATIC_ASSERT
+		  || TREE_CODE (t) == SUBSET_STMT)
 		tsubst_stmt (t, args, tf_warning_or_error, NULL_TREE);
 	      else if (TREE_CODE (t) != CONST_DECL)
 		{
@@ -19891,6 +19897,15 @@ tsubst_stmt (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 
     case USING_STMT:
       finish_using_directive (USING_STMT_NAMESPACE (t), /*attribs=*/NULL_TREE);
+      break;
+
+    case SUBSET_STMT:
+      subset_set_active (SUBSET_STMT_GROUP (t),
+			 SUBSET_STMT_ACTIVE (t) == boolean_true_node);
+      /* Keep it for the instantiation of a generic lambda whose body is
+	 only partially instantiated here.  */
+      if (processing_template_decl)
+	add_stmt (copy_node (t));
       break;
 
     case PRECONDITION_STMT:
@@ -28928,6 +28943,11 @@ instantiate_body (tree pattern, tree args, tree d, bool nested_p)
   else
     /* Only OMP reductions are nested.  */
     gcc_checking_assert (DECL_OMP_DECLARE_REDUCTION_P (code_pattern));
+
+  /* Use the active subsets of the definition of the template.  */
+  auto ss = make_temp_override (current_subset_state,
+				td ? subset_template_state (td)
+				: current_subset_state);
 
   vec<tree> omp_privatization_save;
   if (current_function_decl)

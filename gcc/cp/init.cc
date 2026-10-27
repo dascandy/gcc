@@ -640,6 +640,12 @@ maybe_instantiate_nsdmi_init (tree member, tsubst_flags_t complain)
 
 	  start_lambda_scope (member);
 
+	  /* Like a function body, the initializer uses the subsets that were
+	     active at its definition.  */
+	  auto ss = make_temp_override (current_subset_state,
+					subset_template_state
+					  (DECL_TI_TEMPLATE (member)));
+
 	  /* Do deferred instantiation of the NSDMI.  */
 	  init = tsubst_expr (init, DECL_TI_ARGS (member), complain, member);
 	  init = digest_nsdmi_init (member, init, complain);

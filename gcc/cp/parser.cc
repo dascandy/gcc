@@ -1777,6 +1777,7 @@ cp_token_cache_new (cp_token *first, cp_token *last)
   cp_token_cache *cache = ggc_alloc<cp_token_cache> ();
   cache->first = first;
   cache->last = last;
+  cache->subset_state = current_subset_state;
   return cache;
 }
 
@@ -4900,6 +4901,11 @@ cp_parser_push_lexer_for_tokens (cp_parser *parser, cp_token_cache *cache)
   lexer->next = parser->lexer;
   parser->lexer = lexer;
 
+  /* Parse the tokens with the subsets that were active where they
+     appeared.  */
+  lexer->saved_subset_state = current_subset_state;
+  current_subset_state = cache->subset_state;
+
   /* Move the current source position to that of the first token in the
      new lexer.  */
   cp_lexer_set_source_position_from_token (lexer->next_token);
@@ -4912,6 +4918,7 @@ cp_parser_pop_lexer (cp_parser *parser)
 {
   cp_lexer *lexer = parser->lexer;
   parser->lexer = lexer->next;
+  current_subset_state = lexer->saved_subset_state;
   cp_lexer_destroy (lexer);
 
   /* Put the current source position back where it was before this
@@ -14749,7 +14756,7 @@ cp_parser_statement (cp_parser* parser, tree in_statement_expr,
 
 static void
 cp_parser_subset_change (tree name, tree args, bool active, location_t loc,
-			 subset_attr_context ARG_UNUSED (context))
+			 subset_attr_context context)
 {
   if (!args
       || TREE_CHAIN (args)
@@ -14770,6 +14777,17 @@ cp_parser_subset_change (tree name, tree args, bool active, location_t loc,
 		active ? G_("subset %qE is already active")
 		: G_("subset %qE is already suppressed"), group);
   subset_set_active (group, active);
+
+  /* Replay the change when instantiating the template.  */
+  if (context == sac_namespace || !processing_template_decl)
+    return;
+  tree stmt = build_stmt (loc, SUBSET_STMT, group,
+			  active ? boolean_true_node : boolean_false_node);
+  if (context == sac_statement)
+    add_stmt (stmt);
+  else
+    maybe_add_class_template_decl_list (current_class_type, stmt,
+					/*friend_p=*/0);
 }
 
 /* Apply the subset::activate and subset::suppress attributes in ATTRS, in
@@ -37634,6 +37652,12 @@ static void
 cp_parser_late_parsing_nsdmi (cp_parser *parser, tree field)
 {
   tree def;
+
+  /* Instantiate the initializer of a class template with the subsets that
+     were active where it appeared.  */
+  if (processing_template_decl)
+    subset_set_template_state
+      (field, DEFPARSE_TOKENS (DECL_INITIAL (field))->subset_state);
 
   maybe_begin_member_template_processing (field);
 

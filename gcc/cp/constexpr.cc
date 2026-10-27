@@ -536,6 +536,7 @@ check_constexpr_ctor_body_1 (tree last, tree list)
        return true;
 
     case USING_STMT:
+    case SUBSET_STMT:
     case STATIC_ASSERT:
     case DEBUG_BEGIN_STMT:
       return true;
@@ -773,6 +774,7 @@ constexpr_fn_retval (tree body)
       return constexpr_fn_retval (BIND_EXPR_BODY (body));
 
     case USING_STMT:
+    case SUBSET_STMT:
     case DEBUG_BEGIN_STMT:
       return NULL_TREE;
 
@@ -12625,6 +12627,7 @@ potential_constant_expression_1 (tree t, bool want_rval, bool strict, bool now,
     case RESULT_DECL:
     case USING_DECL:
     case USING_STMT:
+    case SUBSET_STMT:
     case PLACEHOLDER_EXPR:
     case REQUIRES_EXPR:
     case STATIC_ASSERT:
