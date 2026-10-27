@@ -7331,6 +7331,7 @@ extern tristate ref_conv_binds_to_temporary	(tree, tree, bool = false);
 extern unsigned HOST_WIDE_INT count_ctor_elements (tree);
 extern tree build_user_type_conversion		(tree, tree, int,
 						 tsubst_flags_t);
+extern void subset_check_variadic_call		(tree, tree, tsubst_flags_t);
 extern void subset_check_overloaded_operator	(location_t, tree, bool,
 						 tsubst_flags_t);
 extern tree build_new_function_call		(tree, vec<tree, va_gc> **,

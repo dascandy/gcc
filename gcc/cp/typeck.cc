@@ -4858,6 +4858,15 @@ convert_arguments (tree typelist, vec<tree, va_gc> **values, tree fndecl,
   /* Argument passing is always copy-initialization.  */
   flags |= LOOKUP_ONLYCONVERTING;
 
+  /* A function type whose parameter list does not end in void_list_node
+     has an ellipsis; check the first argument passed to it.  */
+  for (i = 0, typetail = typelist;
+       typetail && typetail != void_list_node;
+       i++, typetail = TREE_CHAIN (typetail))
+    ;
+  if (!typetail && i < vec_safe_length (*values))
+    subset_check_variadic_call (fndecl, (**values)[i], complain);
+
   for (i = 0, typetail = typelist;
        i < vec_safe_length (*values);
        i++)
