@@ -27,6 +27,9 @@ template <typename T> struct [[subset::remove(core)]] S2<T *> {};
 [[subset::remove(core)]] extern int v2 = 1;	// { dg-warning "initialized and declared" }
 template <typename T> [[subset::remove(core)]] T v3 = T ();
 [[using subset: remove(core)]] int v4;
+[[subset::remove(core)]] typedef int T1;
+using T2 [[subset::remove(core)]] = int;
+template <typename T> using T3 [[subset::remove(core)]] = T;
 
 void
 g ()
@@ -43,8 +46,6 @@ struct S3 {
 };
 struct [[subset::remove(core)]] F;			// { dg-warning "only applies to" }
 void p ([[subset::remove(core)]] int);		// { dg-warning "only applies to" }
-[[subset::remove(core)]] typedef int T1;		// { dg-warning "only applies to" }
-using T2 [[subset::remove(core)]] = int;		// { dg-warning "only applies to" }
 enum [[subset::remove(core)]] E { e };		// { dg-warning "only applies to" }
 int [[subset::remove(core)]] t;			// { dg-warning "attribute ignored" }
 

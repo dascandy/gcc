@@ -8575,6 +8575,7 @@ extern void subset_set_template_state		(tree, tree);
 extern bool subset_check_use			(location_t, tree,
 						 tsubst_flags_t);
 extern void subset_check_pending_uses		(tree);
+extern bool subset_in_alias_substitution_p	(void);
 extern void push_subset_deferral		(void);
 extern tree pop_subset_deferral			(void);
 extern void subset_defer_uses			(tree, tree);

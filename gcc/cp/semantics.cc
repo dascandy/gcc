@@ -2315,17 +2315,19 @@ subset_removed_error (location_t loc, tree t, tree attrs)
   while (!subset_active_p (TREE_VALUE (TREE_VALUE (a))))
     a = lookup_attribute ("subset", "remove", TREE_CHAIN (a));
   tree reason = TREE_CHAIN (TREE_VALUE (a));
+  /* Name a typedef or alias by its type, as 'A' {aka 'int'}.  */
+  tree what = is_typedef_decl (t) ? TREE_TYPE (t) : t;
   auto_diagnostic_group d;
-  if (reason && TYPE_P (t))
-    error_at (loc, "%qT was subset-removed: %s", t,
+  if (reason && TYPE_P (what))
+    error_at (loc, "%qT was subset-removed: %s", what,
 	      TREE_STRING_POINTER (TREE_VALUE (reason)));
   else if (reason)
-    error_at (loc, "%qD was subset-removed: %s", t,
+    error_at (loc, "%qD was subset-removed: %s", what,
 	      TREE_STRING_POINTER (TREE_VALUE (reason)));
-  else if (TYPE_P (t))
-    error_at (loc, "%qT was subset-removed", t);
+  else if (TYPE_P (what))
+    error_at (loc, "%qT was subset-removed", what);
   else
-    error_at (loc, "%qD was subset-removed", t);
+    error_at (loc, "%qD was subset-removed", what);
   inform (TYPE_P (t) ? location_of (t) : DECL_SOURCE_LOCATION (t),
 	  "declared here");
 }
@@ -2340,6 +2342,12 @@ static bool subset_any_removed;
 static tree
 subset_attributes (tree t)
 {
+  /* A dependent alias template specialization is checked when it is
+     substituted.  */
+  if (TREE_CODE (t) == TYPE_DECL
+      && TREE_TYPE (t)
+      && dependent_type_p (TREE_TYPE (t)))
+    return NULL_TREE;
   if (DECL_P (t))
     return DECL_ATTRIBUTES (t);
   if (dependent_type_p (t))
@@ -2506,23 +2514,29 @@ subset_removable_p (tree t, tree attrs)
 	  || hash_map_safe_get (subset_deferred_uses, t));
 }
 
-/* Check the use at LOC of T, a declaration or type.  If COMPLAIN allows
-   errors, give an error if T is subset-removed for an active subset, or if
-   T is a specialization that was formed using such an entity.  Otherwise,
-   record the use for the specialization being formed, so that it is
-   diagnosed if that specialization is chosen.  Return true if an error was
-   given.  */
+/* Return true if we are substituting into an alias template.  The uses in
+   it are checked where the alias is named, since a use of an alias is a use
+   of the type it names.  */
 
 bool
-subset_check_use (location_t loc, tree t, tsubst_flags_t complain)
+subset_in_alias_substitution_p (void)
 {
-  if (!subset_any_removed
-      || !t
-      || t == error_mark_node
-      || (TYPE_P (t) && currently_open_class (t)))
-    return false;
-  /* Uses in a system header are not checked, like the subset rules.  */
-  if (in_system_header_at (loc))
+  if (tinst_level *level = current_instantiation ())
+    {
+      tree t = level->tldcl;
+      if (TREE_CODE (t) == TREE_LIST)
+	t = TREE_PURPOSE (t);
+      return TREE_CODE (t) == TEMPLATE_DECL && DECL_ALIAS_TEMPLATE_P (t);
+    }
+  return false;
+}
+
+/* Subroutine of subset_check_use: check the use at LOC of T itself.  */
+
+static bool
+subset_check_use_1 (location_t loc, tree t, tsubst_flags_t complain)
+{
+  if (TYPE_P (t) && currently_open_class (t))
     return false;
   tree attrs = subset_attributes (t);
   if (!subset_removable_p (t, attrs))
@@ -2568,6 +2582,34 @@ subset_check_use (location_t loc, tree t, tsubst_flags_t complain)
 	  }
       }
   return err;
+}
+
+/* Check the use at LOC of T, a declaration or type.  If COMPLAIN allows
+   errors, give an error if T is subset-removed for an active subset, or if
+   T is a specialization that was formed using such an entity.  Otherwise,
+   record the use for the specialization being formed, so that it is
+   diagnosed if that specialization is chosen.  Return true if an error was
+   given.  */
+
+bool
+subset_check_use (location_t loc, tree t, tsubst_flags_t complain)
+{
+  if (!subset_any_removed || !t || t == error_mark_node)
+    return false;
+  /* Uses in a system header are not checked, like the subset rules.  */
+  if (in_system_header_at (loc))
+    return false;
+
+  /* A use of a typedef or alias is a use of the type it names.  */
+  if (TYPE_P (t) && typedef_variant_p (t))
+    return subset_check_use (loc, TYPE_NAME (t), complain);
+  if (is_typedef_decl (t))
+    {
+      bool err = subset_check_use_1 (loc, t, complain);
+      return subset_check_use (loc, DECL_ORIGINAL_TYPE (t), complain) || err;
+    }
+
+  return subset_check_use_1 (loc, t, complain);
 }
 
 /* The subset groups that can be activated or suppressed: the predefined

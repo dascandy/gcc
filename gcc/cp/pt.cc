@@ -17311,6 +17311,9 @@ tsubst (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 
       if (r)
 	{
+	  /* A use of the typedef is a use of the type it names.  */
+	  if (r != error_mark_node && !subset_in_alias_substitution_p ())
+	    subset_check_use (input_location, r, complain);
 	  r = TREE_TYPE (r);
 	  r = cp_build_qualified_type
 	    (r, cp_type_quals (t) | cp_type_quals (r),
@@ -17381,7 +17384,8 @@ tsubst (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 
 	  tree r = lookup_template_class (t, argvec, in_decl, NULL_TREE,
 					  complain);
-	  subset_check_use (input_location, r, complain);
+	  if (!subset_in_alias_substitution_p ())
+	    subset_check_use (input_location, r, complain);
 	  return cp_build_qualified_type (r, cp_type_quals (t), complain);
 	}
       else
@@ -18019,6 +18023,10 @@ tsubst (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 	f = make_typename_type (ctx, f, tag_type, tcomplain);
 	if (f == error_mark_node)
 	  return f;
+	if (!subset_in_alias_substitution_p ())
+	  subset_check_use (input_location,
+			    (TREE_CODE (f) == TYPE_DECL && !is_typedef_decl (f)
+			     ? TREE_TYPE (f) : f), complain);
 	if (TREE_CODE (f) == TYPE_DECL)
 	  {
 	    complain |= tf_ignore_bad_quals;

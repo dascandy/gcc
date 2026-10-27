@@ -5717,7 +5717,8 @@ void
 warn_misplaced_subset_remove (tree name)
 {
   warning (OPT_Wattributes, "%<subset::%E%> attribute only applies to "
-	   "functions, class definitions and variable definitions", name);
+	   "functions, class definitions, variable definitions and aliases",
+	   name);
 }
 
 /* Handle a "subset::remove" attribute; arguments as in
@@ -5756,6 +5757,9 @@ handle_subset_remove_attribute (tree *node, tree name, tree args, int flags,
   bool ok;
   if (TREE_CODE (t) == FUNCTION_DECL)
     ok = true;
+  else if (TREE_CODE (t) == TYPE_DECL)
+    /* A typedef or alias, whose underlying type is not set yet.  */
+    ok = !DECL_ARTIFICIAL (t) && !DECL_TEMPLATE_PARM_P (t);
   else if (VAR_P (t))
     ok = !DECL_EXTERNAL (t);
   else if (TYPE_P (t))
