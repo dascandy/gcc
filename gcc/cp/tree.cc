@@ -5710,6 +5710,36 @@ const scoped_attribute_specs cxx_clang_attribute_table =
 };
 // clang-format on
 
+/* Handle a "subset::activate" or "subset::suppress" attribute that does
+   not appear on its own; arguments as in struct attribute_spec.handler.  */
+static tree
+handle_subset_activate_attribute (tree *, tree name, tree, int,
+				  bool *no_add_attrs)
+{
+  warning (OPT_Wattributes, "%<subset::%E%> attribute must appear as a "
+	   "separate statement or declaration", name);
+  *no_add_attrs = true;
+  return NULL_TREE;
+}
+
+/* Table of C++ attributes in the subset:: namespace.  */
+// clang-format off
+static const attribute_spec cxx_subset_attributes[] =
+{
+  /* { name, min_len, max_len, decl_req, type_req, fn_type_req,
+       affects_type_identity, handler, exclude } */
+  { "activate", 1, 1, false, false, false, false,
+    handle_subset_activate_attribute, NULL },
+  { "suppress", 1, 1, false, false, false, false,
+    handle_subset_activate_attribute, NULL },
+};
+
+const scoped_attribute_specs cxx_subset_attribute_table =
+{
+  "subset", { cxx_subset_attributes }
+};
+// clang-format on
+
 /* Handle an "init_priority" attribute; arguments as in
    struct attribute_spec.handler.  */
 static tree

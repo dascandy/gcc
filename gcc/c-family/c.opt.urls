@@ -924,6 +924,9 @@ UrlSuffix(gcc/Warning-Options.html#index-Wno-redundant-decls)
 Wredundant-move
 UrlSuffix(gcc/C_002b_002b-Dialect-Options.html#index-Wno-redundant-move)
 
+Wredundant-subset
+UrlSuffix(gcc/C_002b_002b-Dialect-Options.html#index-Wno-redundant-subset)
+
 Wredundant-tags
 UrlSuffix(gcc/C_002b_002b-Dialect-Options.html#index-Wno-redundant-tags)
 

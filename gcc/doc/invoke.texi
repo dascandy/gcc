@@ -286,8 +286,8 @@ in the following sections.
 -Wmultiple-inheritance  -Wnamespaces  -Wnarrowing
 -Wnoexcept  -Wnoexcept-type  -Wnon-virtual-dtor
 -Wpessimizing-move  -Wno-placement-new  -Wplacement-new=@var{n}
--Wrange-loop-construct  -Wredundant-move  -Wredundant-tags
--Wreorder  -Wregister  -Wno-sfinae-incomplete
+-Wrange-loop-construct  -Wredundant-move  -Wredundant-subset
+-Wredundant-tags  -Wreorder  -Wregister  -Wno-sfinae-incomplete
 -Wstrict-null-sentinel  -Wno-subobject-linkage  -Wtemplates
 -Wno-non-c-typedef-for-linkage  -Wno-non-template-friend  -Wold-style-cast
 -Woverloaded-virtual  -Wno-pmf-conversions  -Wself-move  -Wsign-promo
@@ -4561,6 +4561,24 @@ type @code{double} is created and destroyed, to which the reference
 @code{const double &} is bound.
 
 This warning is enabled by @option{-Wall}.
+
+@opindex Wredundant-subset
+@opindex Wno-redundant-subset
+@item -Wredundant-subset @r{(C++ and Objective-C++ only)}
+Warn when a @code{[[subset::activate(@var{group})]]} attribute activates a
+subset group that is already active, or a
+@code{[[subset::suppress(@var{group})]]} attribute suppresses a subset group
+that is not active.  For example:
+
+@smallexample
+[[subset::activate(no_empty_statement)]];
+void f ()
+@{
+  [[subset::activate(no_empty_statement)]];   // warn: already active
+@}
+@end smallexample
+
+This warning is enabled by @option{-Wpedantic}.
 
 @opindex Wredundant-tags
 @opindex Wno-redundant-tags

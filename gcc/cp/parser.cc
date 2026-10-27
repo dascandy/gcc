@@ -2954,6 +2954,12 @@ static tree cp_parser_std_attribute_spec
   (cp_parser *);
 static tree cp_parser_std_attribute_spec_seq
   (cp_parser *);
+/* Where an attribute-declaration with subset attributes appears.  */
+enum subset_attr_context { sac_namespace, sac_member, sac_statement };
+static tree cp_parser_subset_attributes
+  (tree, location_t, subset_attr_context);
+static bool cp_parser_subset_attribute_declaration_p
+  (cp_parser *);
 static size_t cp_parser_skip_std_attribute_spec_seq
   (cp_parser *, size_t);
 static size_t cp_parser_skip_attributes_opt
@@ -14719,6 +14725,12 @@ cp_parser_statement (cp_parser* parser, tree in_statement_expr,
 			"%<fallthrough%> attribute not followed by %<;%>");
 	  std_attrs = NULL_TREE;
 	}
+
+      /* Handle [[subset::activate(group)]]; and
+	 [[subset::suppress(group)]];.  */
+      if (statement == NULL_TREE)
+	std_attrs = cp_parser_subset_attributes (std_attrs, attrs_loc,
+						 sac_statement);
     }
 
   /* Set the line number for the statement.  */
@@ -14729,6 +14741,89 @@ cp_parser_statement (cp_parser* parser, tree in_statement_expr,
   if (std_attrs != NULL_TREE && any_nonignored_attribute_p (std_attrs))
     warning_at (attrs_loc, OPT_Wattributes,
 		"attributes at the beginning of statement are ignored");
+}
+
+/* Handle a subset::activate attribute if ACTIVE, else a subset::suppress
+   attribute, NAME with arguments ARGS that appeared on its own at LOC, in
+   CONTEXT.  */
+
+static void
+cp_parser_subset_change (tree name, tree args, bool active, location_t loc,
+			 subset_attr_context ARG_UNUSED (context))
+{
+  if (!args
+      || TREE_CHAIN (args)
+      || TREE_CODE (TREE_VALUE (args)) != IDENTIFIER_NODE)
+    {
+      error_at (loc, "%<subset::%E%> attribute requires a subset group name",
+		name);
+      return;
+    }
+  tree group = TREE_VALUE (args);
+  if (!subset_known_p (group))
+    {
+      error_at (loc, "unknown subset %qE", group);
+      return;
+    }
+  if (subset_unchanged_p (group, active))
+    warning_at (loc, OPT_Wredundant_subset,
+		active ? G_("subset %qE is already active")
+		: G_("subset %qE is already suppressed"), group);
+  subset_set_active (group, active);
+}
+
+/* Apply the subset::activate and subset::suppress attributes in ATTRS, in
+   the order they appear, and return ATTRS without them.  ATTRS appeared on
+   their own at LOC, in CONTEXT.  */
+
+static tree
+cp_parser_subset_attributes (tree attrs, location_t loc,
+			     subset_attr_context context)
+{
+  if (attrs == error_mark_node)
+    return attrs;
+
+  for (tree *p = &attrs; *p; )
+    {
+      tree a = *p;
+      tree name = get_attribute_name (a);
+      bool active = is_attribute_p ("activate", name);
+      if (!is_attribute_namespace_p ("subset", a)
+	  || (!active && !is_attribute_p ("suppress", name)))
+	{
+	  p = &TREE_CHAIN (a);
+	  continue;
+	}
+
+      tree args = TREE_VALUE (a);
+      if (args == error_mark_node)
+	/* Already diagnosed.  */;
+      else
+	cp_parser_subset_change (name, args, active, loc, context);
+      *p = TREE_CHAIN (a);
+    }
+  return attrs;
+}
+
+/* Return true if the next tokens are an attribute-declaration with an
+   attribute in the subset namespace.  */
+
+static bool
+cp_parser_subset_attribute_declaration_p (cp_parser *parser)
+{
+  size_t end = cp_parser_skip_std_attribute_spec_seq (parser, 1);
+  if (end == 1 || !cp_lexer_nth_token_is (parser->lexer, end, CPP_SEMICOLON))
+    return false;
+  for (size_t n = 1; n < end; ++n)
+    {
+      cp_token *token = cp_lexer_peek_nth_token (parser->lexer, n);
+      if (token->type == CPP_NAME
+	  && id_equal (token->u.value, "subset")
+	  && (cp_lexer_nth_token_is (parser->lexer, n + 1, CPP_SCOPE)
+	      || cp_lexer_nth_token_is (parser->lexer, n + 1, CPP_COLON)))
+	return true;
+    }
+  return false;
 }
 
 /* Append ATTR to attribute list ATTRS.  */
@@ -17727,6 +17822,9 @@ cp_parser_declaration (cp_parser* parser, tree prefix_attrs)
 	      cp_lexer_destroy (lexer);
 	    }
 	}
+
+      std_attrs = cp_parser_subset_attributes (std_attrs, attrs_loc,
+					       sac_namespace);
 
       if (std_attrs != NULL_TREE && any_nonignored_attribute_p (std_attrs))
 	warning_at (make_location (attrs_loc, attrs_loc, parser->lexer),
@@ -24694,7 +24792,9 @@ cp_parser_namespace_definition (cp_parser* parser)
 static void
 cp_parser_namespace_body (cp_parser* parser)
 {
+  push_subset_state ();
   cp_parser_declaration_seq_opt (parser);
+  pop_subset_state ();
 }
 
 /* Parse a namespace-alias-definition.
@@ -30072,8 +30172,13 @@ cp_parser_class_specifier (cp_parser* parser)
     /* If the type is erroneous, skip the entire body of the class.  */
     cp_parser_skip_to_closing_brace (parser);
   else
-    /* Parse the member-specification.  */
-    cp_parser_member_specification_opt (parser);
+    {
+      /* Parse the member-specification.  A subset activated or suppressed
+	 in it applies to the end of the class.  */
+      push_subset_state ();
+      cp_parser_member_specification_opt (parser);
+      pop_subset_state ();
+    }
 
   /* Register any "begin declare variant" functions in this class, since
      references to the base function can only be resolved after the
@@ -31332,6 +31437,20 @@ cp_parser_member_declaration (cp_parser* parser)
   if (cp_lexer_next_token_is_keyword (parser->lexer, RID_STATIC_ASSERT))
     {
       cp_parser_static_assert (parser, /*member_p=*/true);
+      return;
+    }
+
+  /* Handle [[subset::activate(group)]]; and [[subset::suppress(group)]];
+     in a class.  */
+  if (cp_parser_subset_attribute_declaration_p (parser))
+    {
+      location_t attrs_loc = cp_lexer_peek_token (parser->lexer)->location;
+      tree attrs = cp_parser_std_attribute_spec_seq (parser);
+      attrs = cp_parser_subset_attributes (attrs, attrs_loc, sac_member);
+      if (attrs != NULL_TREE && any_nonignored_attribute_p (attrs))
+	warning_at (make_location (attrs_loc, attrs_loc, parser->lexer),
+		    OPT_Wattributes, "attribute ignored");
+      cp_parser_require (parser, CPP_SEMICOLON, RT_SEMICOLON);
       return;
     }
 
@@ -33676,6 +33795,12 @@ cp_parser_std_attribute (cp_parser *parser, tree attr_ns)
     else if (attr_ns == gnu_identifier
 	     && attribute_takes_identifier_p (attr_id))
       /* A GNU attribute that takes an identifier in parameter.  */
+      attr_flag = id_attr;
+    else if (attr_ns
+	     && is_attribute_p ("subset", attr_ns)
+	     && (is_attribute_p ("activate", attr_id)
+		 || is_attribute_p ("suppress", attr_id)))
+      /* The subset group is an identifier.  */
       attr_flag = id_attr;
     else if (attr_ns == NULL_TREE
 	     && cxx_dialect >= cxx26

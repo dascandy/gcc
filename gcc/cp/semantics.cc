@@ -2164,6 +2164,8 @@ begin_compound_stmt (unsigned int flags)
 {
   tree r;
 
+  push_subset_state ();
+
   if (flags & BCS_NO_SCOPE)
     {
       r = push_stmt_list ();
@@ -2236,6 +2238,122 @@ finish_compound_stmt (tree stmt)
 
   /* ??? See c_end_compound_stmt wrt statement expressions.  */
   add_stmt (stmt);
+
+  pop_subset_state ();
+}
+
+/* The active set of subsets, as a chain of changes: each TREE_LIST has a
+   subset group in TREE_PURPOSE, and boolean_true_node if the group was
+   activated or boolean_false_node if it was suppressed in TREE_VALUE,
+   relative to the set in its TREE_CHAIN.  NULL_TREE is the empty set.
+   Nodes are never modified, so a saved value stays valid.  */
+
+tree current_subset_state;
+
+/* The values of current_subset_state saved by the enclosing scopes.  */
+
+static GTY(()) vec<tree, va_gc> *subset_state_stack;
+
+/* Return true if subset GROUP is in the active set.
+
+   Activating a subset may only make well-formed code ill-formed; it must
+   never change what well-formed code means.  Callers of this function, and
+   of the functions built on it, may therefore only use the result to decide
+   whether to emit a diagnostic.  They must not use it to change the trees
+   being built, the result of name lookup or overload resolution, or whether
+   a substitution fails: in particular they must not return error_mark_node
+   or fail a substitution because a subset is active.  */
+
+bool
+subset_active_p (tree group)
+{
+  for (tree t = current_subset_state; t; t = TREE_CHAIN (t))
+    if (TREE_PURPOSE (t) == group)
+      return TREE_VALUE (t) == boolean_true_node;
+  return false;
+}
+
+/* Return true if subset GROUP is active and applies to code at LOC.  The
+   subsets never apply to code in a system header: users cannot change it,
+   and it is where the low-level features that subsets disallow are used to
+   build the safer ones.  */
+
+bool
+subset_active_at_p (tree group, location_t loc)
+{
+  return !in_system_header_at (loc) && subset_active_p (group);
+}
+
+/* The subset groups that can be activated or suppressed: the predefined
+   ones, and those that something was removed under.  */
+
+static GTY(()) hash_set<tree> *known_subsets;
+
+/* Return true if subset GROUP is in the known-subset table.  */
+
+bool
+subset_known_p (tree group)
+{
+  return known_subsets && known_subsets->contains (group);
+}
+
+/* Add subset GROUP to the known-subset table.  */
+
+void
+subset_add_known (tree group)
+{
+  if (!known_subsets)
+    known_subsets = hash_set<tree>::create_ggc (8);
+  known_subsets->add (group);
+}
+
+/* Return true if setting subset GROUP active if ACTIVE, else suppressing
+   it, would not change the active set.  */
+
+bool
+subset_unchanged_p (tree group, bool active)
+{
+  return subset_active_p (group) == active;
+}
+
+/* Add subset GROUP to the active set if ACTIVE, else remove it.  */
+
+void
+subset_set_active (tree group, bool active)
+{
+  if (subset_active_p (group) != active)
+    current_subset_state
+      = tree_cons (group, active ? boolean_true_node : boolean_false_node,
+		   current_subset_state);
+}
+
+/* Save the active set of subsets on entry to a scope.  */
+
+void
+push_subset_state (void)
+{
+  vec_safe_push (subset_state_stack, current_subset_state);
+}
+
+/* Restore the active set of subsets on exit from a scope.  */
+
+void
+pop_subset_state (void)
+{
+  gcc_checking_assert (!vec_safe_is_empty (subset_state_stack));
+  current_subset_state = subset_state_stack->pop ();
+}
+
+/* Check that every scope that saved the active set of subsets restored
+   it.  */
+
+static void
+check_subset_state_balance (void)
+{
+  /* Error recovery can leave a scope open.  */
+  if (seen_error ())
+    return;
+  gcc_checking_assert (vec_safe_is_empty (subset_state_stack));
 }
 
 /* Finish an asm string literal, which can be a string literal
@@ -4105,6 +4223,8 @@ finish_fname (tree id)
 void
 finish_translation_unit (void)
 {
+  check_subset_state_balance ();
+
   /* In case there were missing closebraces,
      get us back to the global binding level.  */
   pop_everything ();

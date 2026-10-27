@@ -8550,6 +8550,15 @@ enum {
 extern tree begin_compound_stmt			(unsigned int);
 
 extern void finish_compound_stmt		(tree);
+extern GTY(()) tree current_subset_state;
+extern bool subset_active_p			(tree);
+extern bool subset_active_at_p			(tree, location_t);
+extern void subset_set_active			(tree, bool);
+extern bool subset_known_p			(tree);
+extern void subset_add_known			(tree);
+extern bool subset_unchanged_p			(tree, bool);
+extern void push_subset_state			(void);
+extern void pop_subset_state			(void);
 extern tree finish_asm_string_expression	(location_t, tree);
 extern tree finish_asm_stmt			(location_t, int, tree, tree,
 						 tree, tree, tree, bool, bool);
@@ -8863,6 +8872,7 @@ extern bool is_byte_access_type			(tree);
 extern bool is_byte_access_type_not_plain_char	(tree);
 extern const struct scoped_attribute_specs cxx_gnu_attribute_table;
 extern const struct scoped_attribute_specs cxx_clang_attribute_table;
+extern const struct scoped_attribute_specs cxx_subset_attribute_table;
 extern const struct scoped_attribute_specs std_attribute_table;
 extern const struct scoped_attribute_specs internal_attribute_table;
 extern tree make_ptrmem_cst			(tree, tree);
