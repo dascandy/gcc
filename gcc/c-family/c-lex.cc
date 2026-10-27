@@ -591,6 +591,7 @@ c_lex_with_flags (tree *value, location_t *loc, unsigned char *cpp_flags,
   enum cpp_ttype type;
   unsigned char add_flags = 0;
   enum overflow_type overflow = OT_NONE;
+  bool expansion_started = false;
 
   timevar_push (TV_CPP);
  retry:
@@ -601,6 +602,10 @@ c_lex_with_flags (tree *value, location_t *loc, unsigned char *cpp_flags,
   switch (type)
     {
     case CPP_PADDING:
+      /* The padding at the start of a macro expansion points to the name
+	 of the macro.  */
+      if (tok->val.source)
+	expansion_started = true;
       goto retry;
 
     case CPP_NAME:
@@ -877,10 +882,21 @@ c_lex_with_flags (tree *value, location_t *loc, unsigned char *cpp_flags,
   if (cpp_flags)
     *cpp_flags = tok->flags | add_flags;
 
+  /* A macro expansion started just before this token, which did not come
+     from it, so the macro expanded to nothing.  */
+  c_lex_after_empty_expansion
+    = (expansion_started
+       && !linemap_location_from_macro_expansion_p (line_table, *loc));
+
   timevar_pop (TV_CPP);
 
   return type;
 }
+
+/* True if the last token returned by c_lex_with_flags directly follows a
+   macro expansion that expanded to nothing.  */
+
+bool c_lex_after_empty_expansion;
 
 /* Returns the narrowest C-visible unsigned type, starting with the
    minimum specified by FLAGS, that can fit HIGH:LOW, or itk_none if

@@ -299,6 +299,7 @@ extern void pragma_lex_discard_to_eol ();
    having enum cpp_ttype declared.  */
 extern enum cpp_ttype c_lex_with_flags (tree *, location_t *, unsigned char *,
 					int);
+extern bool c_lex_after_empty_expansion;
 
 extern void c_pp_lookup_pragma (unsigned int, const char **, const char **);
 

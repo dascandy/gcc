@@ -13595,7 +13595,10 @@ void
 init_cp_semantics (void)
 {
   /* The predefined subsets.  */
+  subset_add_known (get_identifier ("no_empty_statement"));
   subset_add_known (get_identifier ("throw_non_std_exception"));
+  subset_add_known (get_identifier ("no_goto"));
+  subset_add_known (get_identifier ("no_mixed_switch"));
 }
 
 

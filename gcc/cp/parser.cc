@@ -1141,6 +1141,7 @@ cp_lexer_get_preprocessor_token (unsigned flags, cp_token *token)
   token->tree_check_p = false;
   /* Usually never see a zero, but just in case ... */
   token->main_source_p = line_table->depth <= 1;
+  token->after_empty_expansion_p = c_lex_after_empty_expansion;
 
   /* On some systems, some header files are surrounded by an
      implicit extern "C" block.  Set a flag in the token if it
@@ -2955,6 +2956,8 @@ static tree cp_parser_std_attribute_spec
   (cp_parser *);
 static tree cp_parser_std_attribute_spec_seq
   (cp_parser *);
+static void cp_parser_check_empty_statement
+  (cp_token *);
 /* Where an attribute-declaration with subset attributes appears.  */
 enum subset_attr_context { sac_namespace, sac_member, sac_statement };
 static tree cp_parser_subset_attributes
@@ -4846,6 +4849,7 @@ cp_parser_new (cp_lexer *lexer)
 
   /* We are not in a switch statement.  */
   parser->in_switch_statement_p = false;
+  parser->subset_switch_context = cp_parser::scs_none;
 
   /* We are not parsing a type-id inside an expression.  */
   parser->in_type_id_in_expr_p = false;
@@ -14365,6 +14369,14 @@ cp_parser_statement (cp_parser* parser, tree in_statement_expr,
   /* A copy of IN_COMPOUND which is set to false after seeing a label.
      This matters for certain pragmas.  */
   bool in_compound_for_pragma = in_compound;
+  /* True after seeing a label, which an empty statement can follow even
+     in subset no_empty_statement.  */
+  bool after_label = false;
+  /* Whether this statement is the body of a switch, or a direct child of
+     its compound-statement body.  Only the latter can have case labels in
+     subset no_mixed_switch.  */
+  auto switch_context = parser->subset_switch_context;
+  parser->subset_switch_context = cp_parser::scs_none;
 
  restart:
   if (if_p != NULL)
@@ -14464,8 +14476,16 @@ cp_parser_statement (cp_parser* parser, tree in_statement_expr,
 	  /* Looks like a labeled-statement with a case label.
 	     Parse the label, and then use tail recursion to parse
 	     the statement.  */
+	  if (switch_context != cp_parser::scs_child
+	      && parser->in_switch_statement_p
+	      && subset_active_at_p (get_identifier ("no_mixed_switch"),
+				     token->location))
+	    error_at (token->location, "%qs label not directly in the braced "
+		      "body of its %<switch%> in subset %<no_mixed_switch%>",
+		      keyword == RID_CASE ? "case" : "default");
 	  cp_parser_label_for_labeled_statement (parser, std_attrs);
 	  in_compound_for_pragma = false;
+	  after_label = true;
 	  in_omp_attribute_pragma = parser->lexer->in_omp_attribute_pragma;
 	  goto restart;
 
@@ -14577,6 +14597,7 @@ cp_parser_statement (cp_parser* parser, tree in_statement_expr,
 	      return;
 	    }
 	  in_compound_for_pragma = false;
+	  after_label = true;
 	  in_omp_attribute_pragma = parser->lexer->in_omp_attribute_pragma;
 	  goto restart;
 	}
@@ -14585,6 +14606,10 @@ cp_parser_statement (cp_parser* parser, tree in_statement_expr,
   else if (token->type == CPP_OPEN_BRACE)
     {
       std_attrs = process_stmt_hotness_attribute (std_attrs, attrs_loc);
+      /* A compound-statement that is the body of a switch, after
+	 attributes.  */
+      if (switch_context == cp_parser::scs_body)
+	parser->subset_switch_context = cp_parser::scs_body;
       statement = cp_parser_compound_statement (parser, NULL, BCS_NORMAL, false);
     }
   /* CPP_PRAGMA is a #pragma inside a function body, which constitutes
@@ -14710,6 +14735,10 @@ cp_parser_statement (cp_parser* parser, tree in_statement_expr,
       std_attrs = process_stmt_hotness_attribute (std_attrs, attrs_loc);
 
       /* Look for an expression-statement instead.  */
+      if (!has_std_attrs
+	  && !after_label
+	  && cp_lexer_next_token_is (parser->lexer, CPP_SEMICOLON))
+	cp_parser_check_empty_statement (cp_lexer_peek_token (parser->lexer));
       statement = cp_parser_expression_statement (parser, in_statement_expr);
 
       std_attrs = process_stmt_assume_attribute (std_attrs, statement,
@@ -14748,6 +14777,20 @@ cp_parser_statement (cp_parser* parser, tree in_statement_expr,
   if (std_attrs != NULL_TREE && any_nonignored_attribute_p (std_attrs))
     warning_at (attrs_loc, OPT_Wattributes,
 		"attributes at the beginning of statement are ignored");
+}
+
+/* Give an error for the empty statement SEMICOLON if subset
+   no_empty_statement is active, unless it follows a macro that expanded to
+   nothing, as in "LOG (x);" with logging disabled.  */
+
+static void
+cp_parser_check_empty_statement (cp_token *semicolon)
+{
+  if (!semicolon->after_empty_expansion_p
+      && subset_active_at_p (get_identifier ("no_empty_statement"),
+			     semicolon->location))
+    error_at (semicolon->location,
+	      "empty statement in subset %<no_empty_statement%>");
 }
 
 /* Handle a subset::define attribute with arguments ARGS that appeared on
@@ -15267,6 +15310,10 @@ check_omp_intervening_code (cp_parser *parser)
 static void
 cp_parser_statement_seq_opt (cp_parser* parser, tree in_statement_expr)
 {
+  /* The statements of the body of a switch are its direct children.  */
+  bool switch_body_p
+    = parser->subset_switch_context == cp_parser::scs_body;
+  parser->subset_switch_context = cp_parser::scs_none;
   struct omp_for_parse_data *omp_for_parse_state
     = parser->omp_for_parse_state;
   bool in_omp_loop_block
@@ -15345,6 +15392,8 @@ cp_parser_statement_seq_opt (cp_parser* parser, tree in_statement_expr)
 	}
 
       /* Parse the statement.  */
+      if (switch_body_p)
+	parser->subset_switch_context = cp_parser::scs_child;
       cp_parser_statement (parser, in_statement_expr, true, NULL);
     }
 }
@@ -15732,8 +15781,10 @@ cp_parser_selection_statement (cp_parser* parser, bool *if_p,
 	    in_statement = parser->in_statement;
 	    parser->in_switch_statement_p = true;
 	    parser->in_statement |= IN_SWITCH_STMT;
+	    parser->subset_switch_context = cp_parser::scs_body;
 	    cp_parser_implicitly_scoped_statement (parser, if_p,
 						   guard_tinfo);
+	    parser->subset_switch_context = cp_parser::scs_none;
 	    parser->in_switch_statement_p = in_switch_statement_p;
 	    parser->in_statement = in_statement;
 
@@ -17215,6 +17266,8 @@ cp_parser_jump_statement (cp_parser* parser, tree &std_attrs)
       break;
 
     case RID_GOTO:
+      if (subset_active_at_p (get_identifier ("no_goto"), token->location))
+	error_at (token->location, "%<goto%> statement in subset %<no_goto%>");
       if (parser->in_function_body
 	  && maybe_constexpr_fn (current_function_decl)
 	  && cxx_dialect < cxx23)
@@ -17311,6 +17364,7 @@ cp_parser_implicitly_scoped_statement (cp_parser* parser, bool *if_p,
   /* Mark if () ; with a special NOP_EXPR.  */
   if (cp_lexer_next_token_is (parser->lexer, CPP_SEMICOLON))
     {
+      cp_parser_check_empty_statement (cp_lexer_peek_token (parser->lexer));
       cp_lexer_consume_token (parser->lexer);
       statement = add_stmt (build_empty_stmt (body_loc));
 
