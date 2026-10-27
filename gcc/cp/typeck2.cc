@@ -2734,6 +2734,12 @@ build_functional_cast_1 (location_t loc, tree exp, tree parms,
   else
     type = exp;
 
+  /* Error if TYPE was removed by [[subset::remove]] for an active subset.
+     When instantiating a template, its uses were checked as TYPE was
+     substituted.  */
+  if (!current_instantiation () || processing_template_decl)
+    subset_check_use (loc, type, complain);
+
   /* We need to check this explicitly, since value-initialization of
      arrays is allowed in other situations.  */
   if (TREE_CODE (type) == ARRAY_TYPE)

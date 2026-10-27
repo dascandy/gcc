@@ -8558,9 +8558,12 @@ extern void finish_compound_stmt		(tree);
 extern GTY(()) tree current_subset_state;
 extern bool subset_active_p			(tree);
 extern bool subset_active_at_p			(tree, location_t);
+extern bool subset_removed_p			(tree);
+extern void subset_removed_error		(location_t, tree, tree);
 extern void subset_set_active			(tree, bool);
 extern bool subset_known_p			(tree);
 extern void subset_add_known			(tree);
+extern void subset_add_removal			(tree);
 extern bool subset_defined_p			(tree);
 extern void subset_define			(location_t, tree, tree);
 extern bool subset_unchanged_p			(tree, bool);
@@ -8569,6 +8572,27 @@ extern void pop_subset_state			(void);
 extern void subset_capture_for_template		(tree);
 extern tree subset_template_state		(tree);
 extern void subset_set_template_state		(tree, tree);
+extern bool subset_check_use			(location_t, tree,
+						 tsubst_flags_t);
+extern void subset_check_pending_uses		(tree);
+extern void push_subset_deferral		(void);
+extern tree pop_subset_deferral			(void);
+extern void subset_defer_uses			(tree, tree);
+
+/* While alive, records the uses of entities that can be subset-removed
+   whose diagnostics were suppressed by COMPLAIN, for the specialization
+   being formed; see subset_check_use.  */
+
+class subset_deferral_sentinel
+{
+public:
+  subset_deferral_sentinel () { push_subset_deferral (); }
+  ~subset_deferral_sentinel () { if (!done) pop_subset_deferral (); }
+  /* Stop recording, and return the recorded uses.  */
+  tree finish () { done = true; return pop_subset_deferral (); }
+private:
+  bool done = false;
+};
 extern tree finish_asm_string_expression	(location_t, tree);
 extern tree finish_asm_stmt			(location_t, int, tree, tree,
 						 tree, tree, tree, bool, bool);
@@ -8883,6 +8907,7 @@ extern bool is_byte_access_type_not_plain_char	(tree);
 extern const struct scoped_attribute_specs cxx_gnu_attribute_table;
 extern const struct scoped_attribute_specs cxx_clang_attribute_table;
 extern const struct scoped_attribute_specs cxx_subset_attribute_table;
+extern void warn_misplaced_subset_remove	(tree);
 extern const struct scoped_attribute_specs std_attribute_table;
 extern const struct scoped_attribute_specs internal_attribute_table;
 extern tree make_ptrmem_cst			(tree, tree);

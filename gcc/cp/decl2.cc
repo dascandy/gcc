@@ -1692,6 +1692,10 @@ is_late_template_attribute (tree attr, tree decl)
     /* Unknown attribute.  */
     return false;
 
+  /* The arguments of the subset attributes are never dependent.  */
+  if (is_attribute_namespace_p ("subset", attr))
+    return false;
+
   /* Attribute weak handling wants to write out assembly right away.  */
   if (is_attribute_p ("weak", name))
     return true;
@@ -6443,6 +6447,12 @@ cp_handle_deprecated_or_unavailable (tree decl, tsubst_flags_t complain)
 {
   if (!decl)
     return false;
+
+  /* Error if DECL was removed by [[subset::remove]] for an active subset.  */
+  if (deprecated_state != UNAVAILABLE_DEPRECATED_SUPPRESS
+      && (DECL_P (decl) || TYPE_P (decl))
+      && subset_check_use (input_location, decl, complain))
+    return true;
 
   if ((complain & tf_error)
       && deprecated_state != UNAVAILABLE_DEPRECATED_SUPPRESS)

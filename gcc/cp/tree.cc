@@ -5710,6 +5710,71 @@ const scoped_attribute_specs cxx_clang_attribute_table =
 };
 // clang-format on
 
+/* Warn that the subset::remove attribute NAME does not apply to what it
+   appertains to.  */
+
+void
+warn_misplaced_subset_remove (tree name)
+{
+  warning (OPT_Wattributes, "%<subset::%E%> attribute only applies to "
+	   "functions, class definitions and variable definitions", name);
+}
+
+/* Handle a "subset::remove" attribute; arguments as in
+   struct attribute_spec.handler.  */
+static tree
+handle_subset_remove_attribute (tree *node, tree name, tree args, int flags,
+				bool *no_add_attrs)
+{
+  if (TREE_CODE (TREE_VALUE (args)) != IDENTIFIER_NODE)
+    {
+      error ("%<subset::%E%> attribute argument must be a subset group name",
+	     name);
+      *no_add_attrs = true;
+      return NULL_TREE;
+    }
+  if (subset_defined_p (TREE_VALUE (args)))
+    {
+      error ("cannot remove under subset group %qE, which is defined by "
+	     "%<subset::define%>", TREE_VALUE (args));
+      *no_add_attrs = true;
+      return NULL_TREE;
+    }
+  if (tree reason = TREE_CHAIN (args))
+    {
+      TREE_VALUE (reason) = STRIP_ANY_LOCATION_WRAPPER (TREE_VALUE (reason));
+      if (TREE_CODE (TREE_VALUE (reason)) != STRING_CST)
+	{
+	  error ("%<subset::%E%> attribute reason must be a string literal",
+		 name);
+	  *no_add_attrs = true;
+	  return NULL_TREE;
+	}
+    }
+
+  tree t = *node;
+  bool ok;
+  if (TREE_CODE (t) == FUNCTION_DECL)
+    ok = true;
+  else if (VAR_P (t))
+    ok = !DECL_EXTERNAL (t);
+  else if (TYPE_P (t))
+    ok = ((flags & (int) ATTR_FLAG_TYPE_IN_PLACE)
+	  && CLASS_TYPE_P (t)
+	  && !COMPLETE_TYPE_P (t));
+  else
+    ok = false;
+
+  if (!ok)
+    {
+      warn_misplaced_subset_remove (name);
+      *no_add_attrs = true;
+    }
+  else
+    subset_add_removal (TREE_VALUE (args));
+  return NULL_TREE;
+}
+
 /* Handle a "subset::activate" or "subset::suppress" attribute that does
    not appear on its own; arguments as in struct attribute_spec.handler.  */
 static tree
@@ -5740,6 +5805,8 @@ static const attribute_spec cxx_subset_attributes[] =
 {
   /* { name, min_len, max_len, decl_req, type_req, fn_type_req,
        affects_type_identity, handler, exclude } */
+  { "remove", 1, 2, false, false, false, false,
+    handle_subset_remove_attribute, NULL },
   { "activate", 1, 1, false, false, false, false,
     handle_subset_activate_attribute, NULL },
   { "suppress", 1, 1, false, false, false, false,

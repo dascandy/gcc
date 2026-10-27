@@ -2291,6 +2291,285 @@ subset_active_at_p (tree group, location_t loc)
   return !in_system_header_at (loc) && subset_active_p (group);
 }
 
+/* Return true if attribute list ATTRS has a subset::remove attribute whose
+   subset group is in the active set.  */
+
+bool
+subset_removed_p (tree attrs)
+{
+  for (tree a = lookup_attribute ("subset", "remove", attrs); a;
+       a = lookup_attribute ("subset", "remove", TREE_CHAIN (a)))
+    if (subset_active_p (TREE_VALUE (TREE_VALUE (a))))
+      return true;
+  return false;
+}
+
+/* Give an error at LOC that T, with attribute list ATTRS, was removed by
+   its subset::remove attribute for an active subset, with the reason of
+   the attribute if it has one, and say where T was declared.  */
+
+void
+subset_removed_error (location_t loc, tree t, tree attrs)
+{
+  tree a = lookup_attribute ("subset", "remove", attrs);
+  while (!subset_active_p (TREE_VALUE (TREE_VALUE (a))))
+    a = lookup_attribute ("subset", "remove", TREE_CHAIN (a));
+  tree reason = TREE_CHAIN (TREE_VALUE (a));
+  auto_diagnostic_group d;
+  if (reason && TYPE_P (t))
+    error_at (loc, "%qT was subset-removed: %s", t,
+	      TREE_STRING_POINTER (TREE_VALUE (reason)));
+  else if (reason)
+    error_at (loc, "%qD was subset-removed: %s", t,
+	      TREE_STRING_POINTER (TREE_VALUE (reason)));
+  else if (TYPE_P (t))
+    error_at (loc, "%qT was subset-removed", t);
+  else
+    error_at (loc, "%qD was subset-removed", t);
+  inform (TYPE_P (t) ? location_of (t) : DECL_SOURCE_LOCATION (t),
+	  "declared here");
+}
+
+/* True if anything was removed by subset::remove.  */
+
+static bool subset_any_removed;
+
+/* Return the attribute list of T, a declaration or type, that says whether
+   T is subset-removed, or error_mark_node if that is not known yet.  */
+
+static tree
+subset_attributes (tree t)
+{
+  if (DECL_P (t))
+    return DECL_ATTRIBUTES (t);
+  if (dependent_type_p (t))
+    return NULL_TREE;
+  if (!CLASS_TYPE_P (t)
+      || !CLASSTYPE_IMPLICIT_INSTANTIATION (t)
+      || COMPLETE_TYPE_P (t)
+      || TYPE_BEING_DEFINED (t))
+    return TYPE_ATTRIBUTES (t);
+  /* An implicit instantiation gets the attributes of its pattern when it is
+     instantiated.  Before that, use those of the primary template, unless a
+     partial specialization might be the pattern: finding out would
+     substitute into the partial specializations, which could instantiate
+     other templates.  */
+  tree tmpl = most_general_template (CLASSTYPE_TI_TEMPLATE (t));
+  if (DECL_TEMPLATE_SPECIALIZATIONS (tmpl))
+    return error_mark_node;
+  return TYPE_ATTRIBUTES (TREE_TYPE (tmpl));
+}
+
+/* The uses of subset-removed entities diagnosed so far, so that a use that
+   is checked again, such as one in a template, is diagnosed once.  */
+
+typedef pair_hash <nofree_ptr_hash <tree_node>,
+		   int_hash <location_t, UNKNOWN_LOCATION, BUILTINS_LOCATION> >
+  subset_use_hash;
+static hash_set<subset_use_hash> *subset_diagnosed_uses;
+
+/* If T, with attribute list ATTRS, is subset-removed for an active subset,
+   diagnose its use at LOC unless that use was diagnosed already, and return
+   true.  Set *EMITTED to whether a diagnostic was given.  */
+
+static bool
+subset_diagnose_use (location_t loc, tree t, tree attrs, bool *emitted)
+{
+  *emitted = false;
+  if (!subset_removed_p (attrs))
+    return false;
+  if (loc != UNKNOWN_LOCATION && loc != BUILTINS_LOCATION)
+    {
+      if (!subset_diagnosed_uses)
+	subset_diagnosed_uses = new hash_set<subset_use_hash>;
+      if (subset_diagnosed_uses->add (std::make_pair (t, loc)))
+	return true;
+    }
+  subset_removed_error (loc, t, attrs);
+  *emitted = true;
+  return true;
+}
+
+/* The uses at LOC of implicit instantiations of class templates that were
+   not instantiated yet, and whose pattern can have a partial specialization:
+   each class type is mapped to a TREE_LIST with the active set of subsets
+   at a use in TREE_PURPOSE, and a node that carries the location of the use
+   in TREE_VALUE.  They are diagnosed when the class is instantiated.  */
+
+static GTY(()) hash_map<tree, tree> *subset_pending_uses;
+
+/* Record the use at LOC of TYPE, whose pattern is not known yet.  */
+
+static void
+subset_add_pending_use (location_t loc, tree type)
+{
+  tree *slot = hash_map_safe_get (subset_pending_uses, type);
+  tree use = tree_cons (current_subset_state, build_empty_stmt (loc),
+			slot ? *slot : NULL_TREE);
+  hash_map_safe_put<hm_ggc> (subset_pending_uses, type, use);
+}
+
+/* TYPE was just instantiated: diagnose the uses of it that were made before
+   its pattern was known, if the pattern was subset-removed for a subset
+   that was active at the use.  */
+
+void
+subset_check_pending_uses (tree type)
+{
+  tree *slot = hash_map_safe_get (subset_pending_uses, type);
+  if (!slot)
+    return;
+  tree uses = nreverse (*slot);
+  subset_pending_uses->remove (type);
+  for (tree u = uses; u; u = TREE_CHAIN (u))
+    {
+      auto ss = make_temp_override (current_subset_state, TREE_PURPOSE (u));
+      bool emitted;
+      subset_diagnose_use (EXPR_LOCATION (TREE_VALUE (u)), type,
+			   TYPE_ATTRIBUTES (type), &emitted);
+    }
+}
+
+/* While a template specialization is formed, or a partial specialization
+   is matched, the uses of entities that can be subset-removed whose
+   diagnostics were suppressed by COMPLAIN: each element is a TREE_LIST of
+   those entities in TREE_VALUE.  */
+
+static GTY(()) vec<tree, va_gc> *subset_deferral_stack;
+
+/* The uses recorded while forming each specialization that was formed while
+   its diagnostics were suppressed, keyed by the specialization: a function
+   or variable template specialization, or a class type for the partial
+   specialization chosen for it.  They are diagnosed if the specialization
+   is used, which means it was chosen.  */
+
+static GTY(()) hash_map<tree, tree> *subset_deferred_uses;
+
+/* Start recording uses for a specialization.  */
+
+void
+push_subset_deferral (void)
+{
+  vec_safe_push (subset_deferral_stack, NULL_TREE);
+}
+
+/* Stop recording uses for a specialization, and return the recorded uses.  */
+
+tree
+pop_subset_deferral (void)
+{
+  return subset_deferral_stack->pop ();
+}
+
+/* Record use T for the specialization being formed, if any.  */
+
+static void
+subset_defer_use (tree t)
+{
+  if (vec_safe_is_empty (subset_deferral_stack))
+    return;
+  tree &uses = subset_deferral_stack->last ();
+  if (!value_member (t, uses))
+    uses = tree_cons (NULL_TREE, t, uses);
+}
+
+/* USES, a list from pop_subset_deferral, were made by specialization KEY.
+   Diagnose them if KEY is used.  If KEY is NULL_TREE, they were made by
+   the specialization that is being formed.  */
+
+void
+subset_defer_uses (tree key, tree uses)
+{
+  if (!uses)
+    return;
+  if (!key)
+    for (tree u = uses; u; u = TREE_CHAIN (u))
+      subset_defer_use (TREE_VALUE (u));
+  else
+    {
+      tree *slot = hash_map_safe_get (subset_deferred_uses, key);
+      tree all = slot ? *slot : NULL_TREE;
+      for (tree u = uses; u; u = TREE_CHAIN (u))
+	if (!value_member (TREE_VALUE (u), all))
+	  all = tree_cons (NULL_TREE, TREE_VALUE (u), all);
+      hash_map_safe_put<hm_ggc> (subset_deferred_uses, key, all);
+    }
+}
+
+/* Return true if T can be subset-removed.  */
+
+static bool
+subset_removable_p (tree t, tree attrs)
+{
+  return (attrs == error_mark_node
+	  || lookup_attribute ("subset", "remove", attrs)
+	  || hash_map_safe_get (subset_deferred_uses, t));
+}
+
+/* Check the use at LOC of T, a declaration or type.  If COMPLAIN allows
+   errors, give an error if T is subset-removed for an active subset, or if
+   T is a specialization that was formed using such an entity.  Otherwise,
+   record the use for the specialization being formed, so that it is
+   diagnosed if that specialization is chosen.  Return true if an error was
+   given.  */
+
+bool
+subset_check_use (location_t loc, tree t, tsubst_flags_t complain)
+{
+  if (!subset_any_removed
+      || !t
+      || t == error_mark_node
+      || (TYPE_P (t) && currently_open_class (t)))
+    return false;
+  /* Uses in a system header are not checked, like the subset rules.  */
+  if (in_system_header_at (loc))
+    return false;
+  tree attrs = subset_attributes (t);
+  if (!subset_removable_p (t, attrs))
+    return false;
+
+  if (!(complain & tf_error))
+    {
+      if (attrs == error_mark_node
+	  || lookup_attribute ("subset", "remove", attrs))
+	subset_defer_use (t);
+      if (tree *slot = hash_map_safe_get (subset_deferred_uses, t))
+	for (tree u = *slot; u; u = TREE_CHAIN (u))
+	  subset_defer_use (TREE_VALUE (u));
+      return false;
+    }
+
+  bool err = false, emitted;
+  if (attrs == error_mark_node)
+    subset_add_pending_use (loc, t);
+  else
+    err = subset_diagnose_use (loc, t, attrs, &emitted);
+
+  if (tree *slot = hash_map_safe_get (subset_deferred_uses, t))
+    for (tree u = *slot; u; u = TREE_CHAIN (u))
+      {
+	tree used = TREE_VALUE (u);
+	tree used_attrs = subset_attributes (used);
+	if (used_attrs == error_mark_node)
+	  subset_add_pending_use (loc, used);
+	else
+	  {
+	    auto_diagnostic_group d;
+	    err |= subset_diagnose_use (loc, used, used_attrs, &emitted);
+	    if (emitted)
+	      {
+		if (TYPE_P (t))
+		  inform (location_of (t), "required by the partial "
+			  "specialization chosen for %qT", t);
+		else
+		  inform (DECL_SOURCE_LOCATION (t), "required by the "
+			  "declaration of %qD", t);
+	      }
+	  }
+      }
+  return err;
+}
+
 /* The subset groups that can be activated or suppressed: the predefined
    ones, and those that something was removed under.  */
 
@@ -2302,6 +2581,15 @@ bool
 subset_known_p (tree group)
 {
   return known_subsets && known_subsets->contains (group);
+}
+
+/* Subset GROUP was named by a subset::remove attribute.  */
+
+void
+subset_add_removal (tree group)
+{
+  subset_any_removed = true;
+  subset_add_known (group);
 }
 
 /* Add subset GROUP to the known-subset table.  */
@@ -2434,8 +2722,8 @@ pop_subset_state (void)
   current_subset_state = subset_state_stack->pop ();
 }
 
-/* Check that every scope that saved the active set of subsets restored
-   it.  */
+/* Check that every scope that saved the active set of subsets restored it,
+   and that no specialization is still recording uses.  */
 
 static void
 check_subset_state_balance (void)
@@ -2443,7 +2731,8 @@ check_subset_state_balance (void)
   /* Error recovery can leave a scope open.  */
   if (seen_error ())
     return;
-  gcc_checking_assert (vec_safe_is_empty (subset_state_stack));
+  gcc_checking_assert (vec_safe_is_empty (subset_state_stack)
+		       && vec_safe_is_empty (subset_deferral_stack));
 }
 
 /* T is a declaration or class type being defined.  If it is the pattern
@@ -4164,6 +4453,12 @@ finish_compound_literal (tree type, tree compound_literal,
 	  return error_mark_node;
 	}
     }
+
+  /* Error if TYPE was removed by [[subset::remove]] for an active subset.
+     When instantiating a template, its uses were checked as TYPE was
+     substituted.  */
+  if (!current_instantiation () || processing_template_decl)
+    subset_check_use (input_location, type, complain);
 
   if (template_placeholder_p (type))
     {
