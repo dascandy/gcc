@@ -10367,6 +10367,10 @@ build_over_call (struct z_candidate *cand, int flags, tsubst_flags_t complain)
   tree *argarray;
   bool already_used = false;
 
+  if (DECL_OVERLOADED_OPERATOR_P (fn))
+    subset_check_overloaded_operator (input_location, fn,
+				      /*definition_p=*/false, complain);
+
   /* In a template, there is no need to perform all of the work that
      is normally done.  We are only interested in the type of the call
      expression, i.e., the return type of the function.  Any semantic

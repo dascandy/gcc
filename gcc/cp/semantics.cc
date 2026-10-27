@@ -2463,6 +2463,72 @@ subset_check_builtin_operator (location_t loc, enum tree_code code,
   subset_check_bool_operand (loc, code, op0, op1, assign_p);
 }
 
+/* The overloaded operators that a predefined subset disallows: their
+   definitions, and their uses if USES_P.  NOTE, if not NULL, explains
+   why.  */
+
+static const struct
+{
+  enum ovl_op_code code;
+  const char *name;
+  const char *subset;
+  bool uses_p;
+  const char *note;
+} subset_operators[] = {
+  { OVL_OP_COMPOUND_EXPR, "operator,", "operator_comma_overload", true, NULL },
+  { OVL_OP_ADDR_EXPR, "operator&", "operator_unary_ampersand_overload", true,
+    NULL },
+  { OVL_OP_TRUTH_ANDIF_EXPR, "operator&&", "operator_boolean_binary_overload",
+    false, N_("unlike the built-in %<&&%> and %<||%>, an overloaded one "
+	      "always evaluates both of its operands, which breaks the "
+	      "expectations of its users") },
+  { OVL_OP_TRUTH_ORIF_EXPR, "operator||", "operator_boolean_binary_overload",
+    false, N_("unlike the built-in %<&&%> and %<||%>, an overloaded one "
+	      "always evaluates both of its operands, which breaks the "
+	      "expectations of its users") },
+};
+
+/* Give an error if FN, at LOC, is an overloaded operator that an active
+   subset disallows.  DEFINITION_P says whether FN is being defined;
+   otherwise it is being called, with operator syntax or as a function, and
+   COMPLAIN says whether to give the error.  A subset can disallow only the
+   definitions of an operator, so that one defined elsewhere can still be
+   used.  Deleting one is allowed, as it
+   cannot be used.  A call is only checked outside of templates, so that
+   each call is checked once, when it is instantiated.  */
+
+void
+subset_check_overloaded_operator (location_t loc, tree fn, bool definition_p,
+				  tsubst_flags_t complain)
+{
+  if (DECL_ASSIGNMENT_OPERATOR_P (fn))
+    return;
+  for (const auto &op : subset_operators)
+    {
+      if (DECL_OVERLOADED_OPERATOR_CODE_RAW (fn) != op.code
+	  || !subset_active_at_p (get_identifier (op.subset), loc))
+	continue;
+
+      const char *kind = op.code == OVL_OP_ADDR_EXPR ? "unary " : "";
+      auto_diagnostic_group d;
+      if (definition_p)
+	{
+	  error_at (loc, "defining overloaded %s%qs in subset %qs",
+		    kind, op.name, op.subset);
+	  if (op.note)
+	    inform (loc, op.note);
+	}
+      else if (op.uses_p
+	       && (complain & tf_error) && !processing_template_decl)
+	{
+	  error_at (loc, "using overloaded %s%qs %qD in subset %qs",
+		    kind, op.name, fn, op.subset);
+	  inform (DECL_SOURCE_LOCATION (fn), "declared here");
+	}
+      return;
+    }
+}
+
 /* Return true if attribute list ATTRS has a subset::remove attribute whose
    subset group is in the active set.  */
 
@@ -13776,6 +13842,10 @@ init_cp_semantics (void)
   subset_add_known (get_identifier ("no_boolean_ordering"));
   subset_add_known (get_identifier ("no_goto"));
   subset_add_known (get_identifier ("no_mixed_switch"));
+  /* An operator_boolean_binary_overload entry appears twice; adding it
+     again is harmless.  */
+  for (const auto &op : subset_operators)
+    subset_add_known (get_identifier (op.subset));
 }
 
 

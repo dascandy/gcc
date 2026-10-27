@@ -36736,6 +36736,11 @@ cp_parser_function_definition_after_declarator (cp_parser* parser,
     = parser->implicit_template_scope;
   parser->implicit_template_scope = 0;
 
+  if (DECL_OVERLOADED_OPERATOR_P (current_function_decl))
+    subset_check_overloaded_operator
+      (DECL_SOURCE_LOCATION (current_function_decl), current_function_decl,
+       /*definition_p=*/true, tf_warning_or_error);
+
   saved_in_function_body = parser->in_function_body;
   parser->in_function_body = true;
   /* If the next token is `return', then the code may be trying to
