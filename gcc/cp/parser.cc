@@ -9627,10 +9627,15 @@ post_colon_parsing:
   cp_parser_require (parser, CPP_CLOSE_SQUARE, RT_CLOSE_SQUARE);
 
   /* Build the ARRAY_REF.  */
+  tree array = postfix_expression;
   postfix_expression = grok_array_decl (loc, postfix_expression,
 					index, &expression_list,
 					tf_warning_or_error
 					| (decltype_p ? tf_decltype : 0));
+  if (index)
+    subset_check_builtin_operator (loc, ARRAY_REF, array, index,
+				   postfix_expression, /*assign_p=*/false,
+				   tf_warning_or_error);
 
   /* When not doing offsetof, array references are not permitted in
      constant-expressions.  */
@@ -10763,6 +10768,9 @@ cp_parser_unary_expression (cp_parser *parser, cp_id_kind * pidk,
 	  expression = build_x_unary_op (loc, unary_operator,
 					 cast_expression,
 					 NULL_TREE, complain);
+	  subset_check_builtin_operator (loc, unary_operator, cast_expression,
+					 NULL_TREE, expression,
+					 /*assign_p=*/false, complain);
           /* TODO: build_x_unary_op does not always honor the location,
              so ensure it is set.  */
           expression.set_location (loc);
@@ -10799,6 +10807,9 @@ cp_parser_unary_expression (cp_parser *parser, cp_id_kind * pidk,
 	case TRUTH_NOT_EXPR:
 	  expression = finish_unary_op_expr (loc, unary_operator,
 					     cast_expression, complain);
+	  subset_check_builtin_operator (loc, unary_operator, cast_expression,
+					 NULL_TREE, expression,
+					 /*assign_p=*/false, complain);
 	  break;
 
 	default:
@@ -12023,10 +12034,16 @@ cp_parser_binary_expression (cp_parser* parser, bool cast_p,
       else
         {
 	  op_location_t op_loc (current.loc, combined_loc);
+	  cp_expr lhs = current.lhs;
 	  current.lhs = build_x_binary_op (op_loc, current.tree_type,
                                            current.lhs, current.lhs_type,
 					   rhs, rhs_type, NULL_TREE, &overload,
                                            complain_flags (decltype_p));
+	  if (!overload)
+	    subset_check_builtin_operator (current.loc, current.tree_type,
+					   lhs, rhs, current.lhs,
+					   /*assign_p=*/false,
+					   complain_flags (decltype_p));
           /* TODO: build_x_binary_op doesn't always honor the location.  */
           current.lhs.set_location (combined_loc);
         }
@@ -12222,10 +12239,14 @@ cp_parser_assignment_expression (cp_parser* parser, cp_id_kind * pidk,
 	      loc = make_location (loc,
 				   expr.get_start (),
 				   rhs.get_finish ());
+	      cp_expr lhs = expr;
 	      expr = build_x_modify_expr (loc, expr,
 					  assignment_operator,
 					  rhs, NULL_TREE,
 					  complain_flags (decltype_p));
+	      subset_check_builtin_operator (loc, assignment_operator,
+					     lhs, rhs, expr, /*assign_p=*/true,
+					     complain_flags (decltype_p));
               /* TODO: build_x_modify_expr doesn't honor the location,
                  so we must set it here.  */
               expr.set_location (loc);

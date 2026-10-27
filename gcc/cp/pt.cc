@@ -21943,11 +21943,17 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 
     case POSTDECREMENT_EXPR:
     case POSTINCREMENT_EXPR:
-      op1 = tsubst_non_call_postfix_expression (TREE_OPERAND (t, 0),
-						args, complain, in_decl);
-      RETURN (build_x_unary_op (input_location, TREE_CODE (t), op1,
-				templated_operator_saved_lookups (t),
-				complain|decltype_flag));
+      {
+	op1 = tsubst_non_call_postfix_expression (TREE_OPERAND (t, 0),
+						  args, complain, in_decl);
+	tree r = build_x_unary_op (input_location, TREE_CODE (t), op1,
+				   templated_operator_saved_lookups (t),
+				   complain|decltype_flag);
+	subset_check_builtin_operator (EXPR_LOC_OR_LOC (t, input_location),
+				       TREE_CODE (t), op1, NULL_TREE, r,
+				       /*assign_p=*/false, complain);
+	RETURN (r);
+      }
 
     case BIT_NOT_EXPR:
       if (identifier_p (TREE_OPERAND (t, 0)))
@@ -21970,10 +21976,16 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl)
     case UNARY_PLUS_EXPR:  /* Unary + */
     case REALPART_EXPR:
     case IMAGPART_EXPR:
-      RETURN (build_x_unary_op (input_location, TREE_CODE (t),
-				RECUR (TREE_OPERAND (t, 0)),
-				templated_operator_saved_lookups (t),
-				complain|decltype_flag));
+      {
+	op1 = RECUR (TREE_OPERAND (t, 0));
+	tree r = build_x_unary_op (input_location, TREE_CODE (t), op1,
+				   templated_operator_saved_lookups (t),
+				   complain|decltype_flag);
+	subset_check_builtin_operator (EXPR_LOC_OR_LOC (t, input_location),
+				       TREE_CODE (t), op1, NULL_TREE, r,
+				       /*assign_p=*/false, complain);
+	RETURN (r);
+      }
 
     case EXCESS_PRECISION_EXPR:
       {
@@ -22050,6 +22062,7 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 	warning_sentinel s4(warn_tautological_compare, was_dep);
 	warning_sentinel s5(warn_address, was_dep);
 
+	tree overload = NULL_TREE;
 	tree r = build_x_binary_op
 	  (input_location, TREE_CODE (t),
 	   op0,
@@ -22061,8 +22074,12 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 	    ? ERROR_MARK
 	    : TREE_CODE (TREE_OPERAND (t, 1))),
 	   templated_operator_saved_lookups (t),
-	   /*overload=*/NULL,
+	   &overload,
 	   complain|decltype_flag);
+	if (!overload)
+	  subset_check_builtin_operator (EXPR_LOC_OR_LOC (t, input_location),
+					 TREE_CODE (t), op0, op1, r,
+					 /*assign_p=*/false, complain);
 	if (EXPR_P (r))
 	  copy_warning (r, t);
 
@@ -22110,18 +22127,28 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 	  tree r;
 	  if (vec_safe_length (index_exp_list) == 1
 	      && !PACK_EXPANSION_P (index_exp_list[0]))
-	    r = grok_array_decl (EXPR_LOCATION (t), op1,
-				 index_exp_list[0], NULL,
-				 complain | decltype_flag);
+	    {
+	      r = grok_array_decl (EXPR_LOCATION (t), op1,
+				   index_exp_list[0], NULL,
+				   complain | decltype_flag);
+	      subset_check_builtin_operator (EXPR_LOCATION (t), ARRAY_REF,
+					     op1, index_exp_list[0], r,
+					     /*assign_p=*/false, complain);
+	    }
 	  else
 	    r = grok_array_decl (EXPR_LOCATION (t), op1,
 				 NULL_TREE, &index_exp_list,
 				 complain | decltype_flag);
 	  RETURN (r);
 	}
-      RETURN (build_x_array_ref (EXPR_LOCATION (t), op1,
-				 RECUR (TREE_OPERAND (t, 1)),
-				 complain|decltype_flag));
+      {
+	tree index = RECUR (TREE_OPERAND (t, 1));
+	tree r = build_x_array_ref (EXPR_LOCATION (t), op1, index,
+				    complain|decltype_flag);
+	subset_check_builtin_operator (EXPR_LOCATION (t), ARRAY_REF, op1,
+				       index, r, /*assign_p=*/false, complain);
+	RETURN (r);
+      }
 
     case OMP_ARRAY_SECTION:
       {
@@ -22330,6 +22357,9 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 	  (EXPR_LOCATION (t), lhs, TREE_CODE (TREE_OPERAND (t, 1)), rhs,
 	   templated_operator_saved_lookups (t),
 	   complain|decltype_flag);
+	subset_check_builtin_operator (EXPR_LOCATION (t),
+				       TREE_CODE (TREE_OPERAND (t, 1)),
+				       lhs, rhs, r, /*assign_p=*/true, complain);
 	/* TREE_NO_WARNING must be set if either the expression was
 	   parenthesized or it uses an operator such as >>= rather
 	   than plain assignment.  In the former case, it was already

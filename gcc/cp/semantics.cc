@@ -2291,6 +2291,178 @@ subset_active_at_p (tree group, location_t loc)
   return !in_system_header_at (loc) && subset_active_p (group);
 }
 
+/* Return true if EXPR, the result of a built-in or an overloaded operator,
+   is a call to an overloaded operator.  */
+
+static bool
+subset_operator_call_p (tree expr)
+{
+  while (INDIRECT_REF_P (expr)
+	 || TREE_CODE (expr) == NOP_EXPR
+	 || TREE_CODE (expr) == NON_LVALUE_EXPR
+	 || TREE_CODE (expr) == VIEW_CONVERT_EXPR)
+    expr = TREE_OPERAND (expr, 0);
+  return (TREE_CODE (expr) == CALL_EXPR
+	  || TREE_CODE (expr) == AGGR_INIT_EXPR
+	  || TREE_CODE (expr) == TARGET_EXPR);
+}
+
+/* Return true if EXPR has a class or enumeration type, so that an operator
+   applied to it can be overloaded.  */
+
+static bool
+subset_overloadable_operand_p (tree expr)
+{
+  return (expr && TREE_TYPE (expr)
+	  && OVERLOAD_TYPE_P (non_reference (TREE_TYPE (expr))));
+}
+
+/* Give an error if subset pointer_arithmetic is active and RESULT, built
+   at LOC for the built-in operator CODE applied to OP0 and OP1, adds an
+   integer to or subtracts one from a pointer.  Subtracting two pointers and
+   subscripting an array are allowed.  */
+
+static void
+subset_check_pointer_arithmetic (location_t loc, enum tree_code code,
+				 tree op0, tree op1, tree result)
+{
+  const char *msg;
+  switch (code)
+    {
+    case PLUS_EXPR:
+    case MINUS_EXPR:
+    case PREINCREMENT_EXPR:
+    case POSTINCREMENT_EXPR:
+    case PREDECREMENT_EXPR:
+    case POSTDECREMENT_EXPR:
+      /* The built-in operators that give a pointer are those that add an
+	 integer to or subtract one from a pointer, unlike subtracting two
+	 pointers.  */
+      if (!TYPE_PTR_P (non_reference (TREE_TYPE (result))))
+	return;
+      if (code == PLUS_EXPR)
+	msg = G_("adding an integer to a pointer in subset "
+		 "%<pointer_arithmetic%>");
+      else if (code == MINUS_EXPR)
+	msg = G_("subtracting an integer from a pointer in subset "
+		 "%<pointer_arithmetic%>");
+      else if (code == PREINCREMENT_EXPR || code == POSTINCREMENT_EXPR)
+	msg = G_("incrementing a pointer in subset %<pointer_arithmetic%>");
+      else
+	msg = G_("decrementing a pointer in subset %<pointer_arithmetic%>");
+      break;
+
+    case ARRAY_REF:
+      /* The built-in subscript operator applies to a pointer or an
+	 array.  */
+      if (TREE_CODE (non_reference (TREE_TYPE (op0))) == ARRAY_TYPE
+	  || TREE_CODE (non_reference (TREE_TYPE (op1))) == ARRAY_TYPE)
+	return;
+      msg = G_("subscripting a pointer in subset %<pointer_arithmetic%>");
+      break;
+
+    default:
+      return;
+    }
+  if (subset_active_at_p (get_identifier ("pointer_arithmetic"), loc))
+    error_at (loc, msg);
+}
+
+/* Return true if EXPR has type bool.  */
+
+static bool
+subset_bool_operand_p (tree expr)
+{
+  return (expr && TREE_TYPE (expr)
+	  && TREE_CODE (non_reference (TREE_TYPE (expr))) == BOOLEAN_TYPE);
+}
+
+/* Give an error if the built-in operator CODE at LOC, a compound
+   assignment if ASSIGN_P, is applied to OP0 or OP1 of type bool and an
+   active subset disallows that: subset binary_op_on_bool for a bitwise &,
+   | or ~, and subset no_boolean_ordering for a <, <=, >, >= or <=>.  */
+
+static void
+subset_check_bool_operand (location_t loc, enum tree_code code, tree op0,
+			   tree op1, bool assign_p)
+{
+  const char *name;
+  bool ordering_p = false;
+  switch (code)
+    {
+    case BIT_AND_EXPR:
+      name = assign_p ? "&=" : "&";
+      break;
+    case BIT_IOR_EXPR:
+      name = assign_p ? "|=" : "|";
+      break;
+    case BIT_NOT_EXPR:
+      name = "~";
+      break;
+    case LT_EXPR:
+      name = "<";
+      ordering_p = true;
+      break;
+    case LE_EXPR:
+      name = "<=";
+      ordering_p = true;
+      break;
+    case GT_EXPR:
+      name = ">";
+      ordering_p = true;
+      break;
+    case GE_EXPR:
+      name = ">=";
+      ordering_p = true;
+      break;
+    case SPACESHIP_EXPR:
+      name = "<=>";
+      ordering_p = true;
+      break;
+    default:
+      return;
+    }
+  if (!subset_bool_operand_p (op0) && !subset_bool_operand_p (op1))
+    return;
+  if (!ordering_p
+      && subset_active_at_p (get_identifier ("binary_op_on_bool"), loc))
+    error_at (loc, "bitwise %qs on a %<bool%> operand in subset "
+	      "%<binary_op_on_bool%>", name);
+  else if (ordering_p
+	   && subset_active_at_p (get_identifier ("no_boolean_ordering"),
+				  loc))
+    error_at (loc, "ordering comparison %qs on a %<bool%> operand in subset "
+	      "%<no_boolean_ordering%>", name);
+}
+
+/* Give an error if COMPLAIN allows it and RESULT, built at LOC for operator
+   CODE applied to OP0 and OP1, is a use of a built-in operator that an
+   active subset disallows.  CODE is the code of a binary operator, or of a
+   compound assignment if ASSIGN_P, of a unary operator (OP1 is then
+   NULL_TREE), or ARRAY_REF for a subscript.  A caller that knows an
+   overloaded operator was used does not call this.  This is only checked
+   outside of templates, so that each expression is checked once, when it
+   is instantiated.  */
+
+void
+subset_check_builtin_operator (location_t loc, enum tree_code code,
+			       tree op0, tree op1, tree result, bool assign_p,
+			       tsubst_flags_t complain)
+{
+  if (!(complain & tf_error)
+      || processing_template_decl
+      || error_operand_p (result))
+    return;
+
+  if ((subset_overloadable_operand_p (op0)
+       || subset_overloadable_operand_p (op1))
+      && subset_operator_call_p (result))
+    return;
+
+  subset_check_pointer_arithmetic (loc, code, op0, op1, result);
+  subset_check_bool_operand (loc, code, op0, op1, assign_p);
+}
+
 /* Return true if attribute list ATTRS has a subset::remove attribute whose
    subset group is in the active set.  */
 
@@ -4260,6 +4432,8 @@ finish_increment_expr (cp_expr expr, enum tree_code code)
 					   get_finish (input_location));
   cp_expr result = build_x_unary_op (combined_loc, code, expr,
 				     NULL_TREE, tf_warning_or_error);
+  subset_check_builtin_operator (combined_loc, code, expr, NULL_TREE, result,
+				 /*assign_p=*/false, tf_warning_or_error);
   /* TODO: build_x_unary_op doesn't honor the location, so set it here.  */
   result.set_location (combined_loc);
   return result;
@@ -13597,6 +13771,9 @@ init_cp_semantics (void)
   /* The predefined subsets.  */
   subset_add_known (get_identifier ("no_empty_statement"));
   subset_add_known (get_identifier ("throw_non_std_exception"));
+  subset_add_known (get_identifier ("pointer_arithmetic"));
+  subset_add_known (get_identifier ("binary_op_on_bool"));
+  subset_add_known (get_identifier ("no_boolean_ordering"));
   subset_add_known (get_identifier ("no_goto"));
   subset_add_known (get_identifier ("no_mixed_switch"));
 }

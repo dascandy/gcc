@@ -8559,6 +8559,9 @@ extern GTY(()) tree current_subset_state;
 extern bool subset_active_p			(tree);
 extern bool subset_active_at_p			(tree, location_t);
 extern bool subset_removed_p			(tree);
+extern void subset_check_builtin_operator	(location_t, enum tree_code,
+						 tree, tree, tree, bool,
+						 tsubst_flags_t);
 extern void subset_removed_error		(location_t, tree, tree);
 extern void subset_set_active			(tree, bool);
 extern bool subset_known_p			(tree);
