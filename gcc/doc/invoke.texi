@@ -4568,7 +4568,9 @@ This warning is enabled by @option{-Wall}.
 Warn when a @code{[[subset::activate(@var{group})]]} attribute activates a
 subset group that is already active, or a
 @code{[[subset::suppress(@var{group})]]} attribute suppresses a subset group
-that is not active.  For example:
+that is not active.  For a group defined by @code{[[subset::define]]}, warn
+only when every subset group it expands to is already in the requested
+state.  For example:
 
 @smallexample
 [[subset::activate(no_empty_statement)]];

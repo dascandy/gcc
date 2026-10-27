@@ -14750,6 +14750,23 @@ cp_parser_statement (cp_parser* parser, tree in_statement_expr,
 		"attributes at the beginning of statement are ignored");
 }
 
+/* Handle a subset::define attribute with arguments ARGS that appeared on
+   its own at LOC, in CONTEXT.  */
+
+static void
+cp_parser_subset_define (tree args, location_t loc,
+			 subset_attr_context context)
+{
+  if (context != sac_namespace || !at_namespace_scope_p ())
+    error_at (loc, "%<subset::define%> attribute must appear at namespace "
+	      "scope");
+  else if (!args || !TREE_CHAIN (args))
+    error_at (loc, "%<subset::define%> attribute requires a subset group "
+	      "name and at least one subset group");
+  else
+    subset_define (loc, TREE_VALUE (args), TREE_CHAIN (args));
+}
+
 /* Handle a subset::activate attribute if ACTIVE, else a subset::suppress
    attribute, NAME with arguments ARGS that appeared on its own at LOC, in
    CONTEXT.  */
@@ -14790,9 +14807,9 @@ cp_parser_subset_change (tree name, tree args, bool active, location_t loc,
 					/*friend_p=*/0);
 }
 
-/* Apply the subset::activate and subset::suppress attributes in ATTRS, in
-   the order they appear, and return ATTRS without them.  ATTRS appeared on
-   their own at LOC, in CONTEXT.  */
+/* Apply the subset::define, subset::activate and subset::suppress
+   attributes in ATTRS, in the order they appear, and return ATTRS without
+   them.  ATTRS appeared on their own at LOC, in CONTEXT.  */
 
 static tree
 cp_parser_subset_attributes (tree attrs, location_t loc,
@@ -14805,9 +14822,10 @@ cp_parser_subset_attributes (tree attrs, location_t loc,
     {
       tree a = *p;
       tree name = get_attribute_name (a);
+      bool define = is_attribute_p ("define", name);
       bool active = is_attribute_p ("activate", name);
       if (!is_attribute_namespace_p ("subset", a)
-	  || (!active && !is_attribute_p ("suppress", name)))
+	  || (!define && !active && !is_attribute_p ("suppress", name)))
 	{
 	  p = &TREE_CHAIN (a);
 	  continue;
@@ -14816,6 +14834,8 @@ cp_parser_subset_attributes (tree attrs, location_t loc,
       tree args = TREE_VALUE (a);
       if (args == error_mark_node)
 	/* Already diagnosed.  */;
+      else if (define)
+	cp_parser_subset_define (args, loc, context);
       else
 	cp_parser_subset_change (name, args, active, loc, context);
       *p = TREE_CHAIN (a);
@@ -33786,6 +33806,37 @@ cp_parser_std_attribute (cp_parser *parser, tree attr_ns)
 	  return NULL_TREE;
 	}
       return attribute;
+    }
+
+  if (attr_ns
+      && is_attribute_p ("subset", attr_ns)
+      && is_attribute_p ("define", attr_id))
+    {
+      /* The arguments are subset group names.  */
+      cp_lexer_consume_token (parser->lexer);
+      tree names = NULL_TREE;
+      while (cp_lexer_next_token_is (parser->lexer, CPP_NAME))
+	{
+	  names = tree_cons (NULL_TREE,
+			     cp_lexer_consume_token (parser->lexer)->u.value,
+			     names);
+	  if (cp_lexer_next_token_is_not (parser->lexer, CPP_COMMA)
+	      || !cp_lexer_nth_token_is (parser->lexer, 2, CPP_NAME))
+	    break;
+	  cp_lexer_consume_token (parser->lexer);
+	}
+      if (names && cp_lexer_next_token_is (parser->lexer, CPP_CLOSE_PAREN))
+	{
+	  cp_lexer_consume_token (parser->lexer);
+	  TREE_VALUE (attribute) = nreverse (names);
+	  return attribute;
+	}
+      error_at (token->location, "%<subset::define%> attribute requires "
+		"subset group names");
+      cp_parser_skip_to_closing_parenthesis (parser, /*recovering=*/true,
+					     /*or_comma=*/false,
+					     /*consume_paren=*/true);
+      return error_mark_node;
     }
 
   {

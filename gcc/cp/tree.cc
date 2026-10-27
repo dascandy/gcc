@@ -5722,6 +5722,18 @@ handle_subset_activate_attribute (tree *, tree name, tree, int,
   return NULL_TREE;
 }
 
+/* Handle a "subset::define" attribute that does not appear on its own;
+   arguments as in struct attribute_spec.handler.  */
+static tree
+handle_subset_define_attribute (tree *, tree name, tree, int,
+				bool *no_add_attrs)
+{
+  warning (OPT_Wattributes, "%<subset::%E%> attribute must appear as a "
+	   "separate declaration at namespace scope", name);
+  *no_add_attrs = true;
+  return NULL_TREE;
+}
+
 /* Table of C++ attributes in the subset:: namespace.  */
 // clang-format off
 static const attribute_spec cxx_subset_attributes[] =
@@ -5732,6 +5744,8 @@ static const attribute_spec cxx_subset_attributes[] =
     handle_subset_activate_attribute, NULL },
   { "suppress", 1, 1, false, false, false, false,
     handle_subset_activate_attribute, NULL },
+  { "define", 2, -1, false, false, false, false,
+    handle_subset_define_attribute, NULL },
 };
 
 const scoped_attribute_specs cxx_subset_attribute_table =

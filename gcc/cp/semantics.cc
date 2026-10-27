@@ -2314,20 +2314,103 @@ subset_add_known (tree group)
   known_subsets->add (group);
 }
 
+/* The subset groups defined by subset::define, each mapped to a TREE_LIST
+   of the groups it expands to, none of which is itself defined.  */
+
+static GTY(()) hash_map<tree, tree> *subset_definitions;
+
+/* Return the TREE_LIST of groups that subset GROUP expands to, or NULL_TREE
+   if GROUP is not defined by subset::define.  */
+
+static tree
+subset_expansion (tree group)
+{
+  if (!subset_definitions)
+    return NULL_TREE;
+  tree *slot = subset_definitions->get (group);
+  return slot ? *slot : NULL_TREE;
+}
+
+/* Return true if subset GROUP is defined by subset::define.  */
+
+bool
+subset_defined_p (tree group)
+{
+  return subset_expansion (group) != NULL_TREE;
+}
+
+/* Define subset NAME at LOC to expand to the subsets in the TREE_LIST
+   MEMBERS, and the subsets they expand to.  Give an error and do nothing if
+   NAME is already known, or a member is unknown or listed more than once.
+   A subset that is included through more than one member is included
+   once.  */
+
+void
+subset_define (location_t loc, tree name, tree members)
+{
+  if (subset_known_p (name))
+    {
+      error_at (loc, "subset %qE is already known", name);
+      return;
+    }
+  for (tree m = members; m; m = TREE_CHAIN (m))
+    {
+      tree member = TREE_VALUE (m);
+      if (!subset_known_p (member))
+	{
+	  error_at (loc, "unknown subset %qE", member);
+	  return;
+	}
+      if (value_member (member, TREE_CHAIN (m)))
+	{
+	  error_at (loc, "subset %qE is listed more than once in the "
+		    "definition of %qE", member, name);
+	  return;
+	}
+    }
+  tree expansion = NULL_TREE;
+  hash_set<tree> seen;
+  for (tree m = members; m; m = TREE_CHAIN (m))
+    {
+      tree groups = subset_expansion (TREE_VALUE (m));
+      if (!groups)
+	groups = build_tree_list (NULL_TREE, TREE_VALUE (m));
+      for (tree g = groups; g; g = TREE_CHAIN (g))
+	if (!seen.add (TREE_VALUE (g)))
+	  expansion = tree_cons (NULL_TREE, TREE_VALUE (g), expansion);
+    }
+  hash_map_safe_put<hm_ggc> (subset_definitions, name, nreverse (expansion));
+  subset_add_known (name);
+}
+
 /* Return true if setting subset GROUP active if ACTIVE, else suppressing
    it, would not change the active set.  */
 
 bool
 subset_unchanged_p (tree group, bool active)
 {
-  return subset_active_p (group) == active;
+  tree expansion = subset_expansion (group);
+  if (!expansion)
+    return subset_active_p (group) == active;
+  for (tree g = expansion; g; g = TREE_CHAIN (g))
+    if (subset_active_p (TREE_VALUE (g)) != active)
+      return false;
+  return true;
 }
 
-/* Add subset GROUP to the active set if ACTIVE, else remove it.  */
+/* Add subset GROUP, or the subsets it expands to, to the active set if
+   ACTIVE, else remove them.  */
 
 void
 subset_set_active (tree group, bool active)
 {
+  tree expansion = subset_expansion (group);
+  if (expansion)
+    {
+      for (tree g = expansion; g; g = TREE_CHAIN (g))
+	subset_set_active (TREE_VALUE (g), active);
+      return;
+    }
   if (subset_active_p (group) != active)
     current_subset_state
       = tree_cons (group, active ? boolean_true_node : boolean_false_node,
