@@ -19914,7 +19914,8 @@ tsubst_stmt (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 
     case SUBSET_STMT:
       subset_set_active (SUBSET_STMT_GROUP (t),
-			 SUBSET_STMT_ACTIVE (t) == boolean_true_node);
+			 SUBSET_STMT_ACTIVE (t) == boolean_true_node,
+			 EXPR_LOCATION (t));
       /* Keep it for the instantiation of a generic lambda whose body is
 	 only partially instantiated here.  */
       if (processing_template_decl)

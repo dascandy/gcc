@@ -8566,13 +8566,13 @@ extern void subset_check_builtin_operator	(location_t, enum tree_code,
 						 tree, tree, tree, bool,
 						 tsubst_flags_t);
 extern void subset_removed_error		(location_t, tree, tree);
-extern void subset_set_active			(tree, bool);
+extern void subset_set_active			(tree, bool, location_t);
 extern bool subset_known_p			(tree);
 extern void subset_add_known			(tree);
 extern void subset_add_removal			(tree);
 extern bool subset_defined_p			(tree);
 extern void subset_define			(location_t, tree, tree);
-extern bool subset_unchanged_p			(tree, bool);
+extern bool subset_redundant_p			(tree, bool, location_t);
 extern void push_subset_state			(void);
 extern void pop_subset_state			(void);
 extern void subset_capture_for_template		(tree);

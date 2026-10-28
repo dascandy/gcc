@@ -14940,11 +14940,11 @@ cp_parser_subset_change (tree name, tree args, bool active, location_t loc,
       error_at (loc, "unknown subset %qE", group);
       return;
     }
-  if (subset_unchanged_p (group, active))
+  if (subset_redundant_p (group, active, loc))
     warning_at (loc, OPT_Wredundant_subset,
 		active ? G_("subset %qE is already active")
 		: G_("subset %qE is already suppressed"), group);
-  subset_set_active (group, active);
+  subset_set_active (group, active, loc);
 
   /* Replay the change when instantiating the template.  */
   if (context == sac_namespace || !processing_template_decl)
