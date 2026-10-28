@@ -47,6 +47,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimplify.h"
 #include "contracts.h"
 #include "c-family/c-pragma.h"
+#include "spellcheck-tree.h"
+#include "gcc-rich-location.h"
 
 /* There routines provide a modular interface to perform many parsing
    operations.  They may therefore be used during actual parsing, or
@@ -2910,6 +2912,72 @@ subset_add_removal (tree group)
   subset_add_known (group);
 }
 
+/* The first subset::activate or subset::suppress of each subset group that
+   was not known at the time, as the SUBSET_STMT for the change.  A group
+   can become known later in the translation unit, so whether it is unknown
+   is only decided at its end, by subset_check_unknown.  */
+
+static GTY(()) vec<tree, va_gc> *subset_unknown_changes;
+
+/* Record that subset GROUP, which is not known yet, is activated if ACTIVE,
+   else suppressed, at LOC.  */
+
+void
+subset_note_unknown (tree group, bool active, location_t loc)
+{
+  if (subset_unknown_changes)
+    for (tree change : *subset_unknown_changes)
+      if (SUBSET_STMT_GROUP (change) == group)
+	return;
+  tree change = build_stmt (loc, SUBSET_STMT, group,
+			    active ? boolean_true_node : boolean_false_node);
+  vec_safe_push (subset_unknown_changes, change);
+}
+
+/* Warn about each subset group that was activated or suppressed but is
+   still not known at the end of the translation unit, suggesting a known
+   group with a similar name.  */
+
+static void
+subset_check_unknown (void)
+{
+  if (vec_safe_is_empty (subset_unknown_changes))
+    return;
+
+  /* Consider the candidates in a fixed order, so that a tie between them
+     does not depend on where the identifiers were allocated.  */
+  auto_vec<const char *> names;
+  if (known_subsets)
+    for (tree group : *known_subsets)
+      names.safe_push (IDENTIFIER_POINTER (group));
+  names.qsort ([] (const void *a, const void *b)
+	       {
+		 return strcmp (*(const char *const *) a,
+				*(const char *const *) b);
+	       });
+
+  for (tree change : *subset_unknown_changes)
+    {
+      tree group = SUBSET_STMT_GROUP (change);
+      if (subset_known_p (group))
+	continue;
+      location_t loc = EXPR_LOCATION (change);
+      best_match <tree, const char *> bm (group);
+      for (const char *name : names)
+	bm.consider (name);
+      if (const char *hint = bm.get_best_meaningful_candidate ())
+	{
+	  gcc_rich_location richloc (loc);
+	  richloc.add_fixit_replace (hint);
+	  warning_at (&richloc, OPT_Wunknown_subset,
+		      "unknown subset %qE; did you mean %qs?", group, hint);
+	}
+      else
+	warning_at (loc, OPT_Wunknown_subset, "unknown subset %qE", group);
+    }
+  subset_unknown_changes = NULL;
+}
+
 /* Add subset GROUP to the known-subset table.  */
 
 void
@@ -4997,6 +5065,7 @@ void
 finish_translation_unit (void)
 {
   check_subset_state_balance ();
+  subset_check_unknown ();
 
   /* In case there were missing closebraces,
      get us back to the global binding level.  */

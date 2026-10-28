@@ -1332,6 +1332,10 @@ Wredundant-subset
 C++ ObjC++ Var(warn_redundant_subset) Warning LangEnabledBy(C++ ObjC++,Wpedantic)
 Warn when activating a subset that is already active, or suppressing a subset that is not active.
 
+Wunknown-subset
+C++ ObjC++ Var(warn_unknown_subset) Init(1) Warning
+Warn when activating or suppressing a subset that is still not known at the end of the translation unit.
+
 Wredundant-tags
 C++ ObjC++ Var(warn_redundant_tags) Warning
 Warn when a class or enumerated type is referenced using a redundant class-key.

@@ -1,6 +1,7 @@
 // { dg-do compile { target c++17 } }
-// Only known subsets can be activated or suppressed: the predefined ones,
-// and those that something was removed under.
+// The known subsets are the predefined ones, and those that something was
+// removed under.  A subset that is still not known at the end of the
+// translation unit gets a warning, once, at its first use.
 
 // Predefined.
 [[subset::activate(no_empty_statement)]];
@@ -36,9 +37,9 @@
 [[subset::activate(dynamic_cast)]];
 [[subset::suppress(dynamic_cast)]];
 
-// Not known yet.
-[[subset::activate(core)]];			// { dg-error "unknown subset 'core'" }
-[[subset::suppress(core)]];			// { dg-error "unknown subset 'core'" }
+// Not known yet, but known by the end of the translation unit.
+[[subset::activate(core)]];
+[[subset::suppress(core)]];
 
 [[subset::remove(core)]] void f ();
 [[subset::activate(core)]];
@@ -51,14 +52,14 @@ struct [[subset::remove(cls)]] C {};
 
 // An ignored removal does not make a subset known.
 [[subset::remove(ignored)]] extern int e;	// { dg-warning "only applies to" }
-[[subset::activate(ignored)]];			// { dg-error "unknown subset 'ignored'" }
+[[subset::activate(ignored)]];			// { dg-warning "unknown subset 'ignored'" }
 
 void
 g ()
 {
-  [[subset::activate(never)]];			// { dg-error "unknown subset 'never'" }
+  [[subset::activate(never)]];			// { dg-warning "unknown subset 'never'" }
   {
-    [[subset::suppress(never)]];		// { dg-error "unknown subset 'never'" }
+    [[subset::suppress(never)]];
   }
   [[subset::activate(core)]];
 }
@@ -67,6 +68,6 @@ template <typename T>
 void
 t ()
 {
-  [[subset::activate(never)]];			// { dg-error "unknown subset 'never'" }
+  [[subset::activate(never)]];
 }
 template void t<int> ();

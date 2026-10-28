@@ -73,7 +73,7 @@ use ()
 // Errors.
 struct E
 {
-  [[subset::activate(unknown)]];		// { dg-error "unknown subset 'unknown'" }
+  [[subset::activate(unknown)]];		// { dg-warning "unknown subset 'unknown'" }
   [[subset::define(local, no_empty_statement)]];	// { dg-error "must appear at namespace scope" }
   [[subset::activate(no_empty_statement)]] int x;	// { dg-warning "'subset::activate' attribute must appear as a separate statement or declaration" }
 };

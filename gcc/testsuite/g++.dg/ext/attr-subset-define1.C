@@ -84,7 +84,7 @@ redundant ()
 [[subset::define(bad3, core, core)]];	// { dg-error "subset 'core' is listed more than once in the definition of 'bad3'" }
 [[subset::define(bad4, core, extra, core)]];	// { dg-error "subset 'core' is listed more than once" }
 [[subset::define(bad5, safe, strict, safe)]];	// { dg-error "subset 'safe' is listed more than once" }
-[[subset::activate(bad3)]];		// { dg-error "unknown subset 'bad3'" }
+[[subset::activate(bad3)]];		// { dg-warning "unknown subset 'bad3'" }
 [[subset::define]];			// { dg-error "requires a subset group name and at least one subset group" }
 [[subset::define(bad6)]];		// { dg-error "requires a subset group name and at least one subset group" }
 [[subset::define()]];			// { dg-error "requires subset group names" }

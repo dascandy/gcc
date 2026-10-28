@@ -14935,11 +14935,9 @@ cp_parser_subset_change (tree name, tree args, bool active, location_t loc,
       return;
     }
   tree group = TREE_VALUE (args);
+  /* The group can still become known later in the translation unit.  */
   if (!subset_known_p (group))
-    {
-      error_at (loc, "unknown subset %qE", group);
-      return;
-    }
+    subset_note_unknown (group, active, loc);
   if (subset_redundant_p (group, active, loc))
     warning_at (loc, OPT_Wredundant_subset,
 		active ? G_("subset %qE is already active")
