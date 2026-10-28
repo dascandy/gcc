@@ -2245,10 +2245,13 @@ finish_compound_stmt (tree stmt)
 }
 
 /* The active set of subsets, as a chain of changes: each TREE_LIST has a
-   subset group in TREE_PURPOSE, and in TREE_VALUE a SUBSET_STMT whose
+   subset group in TREE_PURPOSE, which may be one that subset::define
+   defines, now or later, and in TREE_VALUE a SUBSET_STMT whose
    SUBSET_STMT_ACTIVE says whether the group was activated or suppressed,
-   relative to the set in its TREE_CHAIN, and whose location is where.
-   Every change is recorded, even one that leaves the set as it was, so
+   relative to the set in its TREE_CHAIN, and whose location is where.  A
+   change to a defined group applies to the groups it expands to; it is only
+   resolved when the set is queried, so that a group can be activated or
+   suppressed before it is defined.  Every change is recorded, even one that leaves the set as it was, so
    that -Wredundant-subset can find the changes made in a file.  NULL_TREE
    is the empty set.  Nodes are never modified, so a saved value stays
    valid.  */
@@ -2266,6 +2269,21 @@ static GTY(()) vec<tree, va_gc> *subset_state_stack;
 
 static GTY(()) hash_map<tree, tree> *subset_template_states;
 
+static tree subset_expansion (tree);
+
+/* Return true if a change to subset group CHANGED applies to subset group
+   GROUP, which is not defined by subset::define: if it is GROUP, or a
+   defined group that expands to GROUP.  */
+
+static bool
+subset_change_applies_p (tree changed, tree group)
+{
+  if (changed == group)
+    return true;
+  tree expansion = subset_expansion (changed);
+  return expansion && value_member (group, expansion);
+}
+
 /* Return true if subset GROUP is in the active set.
 
    Activating a subset may only make well-formed code ill-formed; it must
@@ -2280,7 +2298,7 @@ bool
 subset_active_p (tree group)
 {
   for (tree t = current_subset_state; t; t = TREE_CHAIN (t))
-    if (TREE_PURPOSE (t) == group)
+    if (subset_change_applies_p (TREE_PURPOSE (t), group))
       return SUBSET_STMT_ACTIVE (TREE_VALUE (t)) == boolean_true_node;
   return false;
 }
@@ -3079,7 +3097,7 @@ subset_group_redundant_p (tree group, bool active, location_t loc)
   if (subset_active_p (group) != active)
     return false;
   for (tree t = current_subset_state; t; t = TREE_CHAIN (t))
-    if (TREE_PURPOSE (t) == group
+    if (subset_change_applies_p (TREE_PURPOSE (t), group)
 	&& subset_same_file_p (EXPR_LOCATION (TREE_VALUE (t)), loc))
       return (SUBSET_STMT_ACTIVE (TREE_VALUE (t)) == boolean_true_node)
 	     == active;
@@ -3102,19 +3120,13 @@ subset_redundant_p (tree group, bool active, location_t loc)
   return true;
 }
 
-/* Add subset GROUP, or the subsets it expands to, to the active set if
-   ACTIVE, else remove them, by a change made at LOC.  */
+/* Add subset GROUP, or the subsets it expands to if subset::define
+   defines it, now or later, to the active set if ACTIVE, else remove them,
+   by a change made at LOC.  */
 
 void
 subset_set_active (tree group, bool active, location_t loc)
 {
-  tree expansion = subset_expansion (group);
-  if (expansion)
-    {
-      for (tree g = expansion; g; g = TREE_CHAIN (g))
-	subset_set_active (TREE_VALUE (g), active, loc);
-      return;
-    }
   tree change = build_stmt (loc, SUBSET_STMT, group,
 			    active ? boolean_true_node : boolean_false_node);
   current_subset_state = tree_cons (group, change, current_subset_state);
