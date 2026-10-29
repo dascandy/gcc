@@ -82,15 +82,19 @@ _GLIBCXX_END_NAMESPACE_CXX11
 
 #ifdef _GLIBCXX_USE_WCHAR_T
   /// Class for @c wchar_t memory buffers.
+  _GLIBCXX_SUBSET_REMOVE(wstringbuf)
   typedef basic_stringbuf<wchar_t> 	wstringbuf;
 
   /// Class for @c wchar_t input memory streams.
+  _GLIBCXX_SUBSET_REMOVE(wistringstream)
   typedef basic_istringstream<wchar_t> 	wistringstream;
 
   /// Class for @c wchar_t output memory streams.
+  _GLIBCXX_SUBSET_REMOVE(wostringstream)
   typedef basic_ostringstream<wchar_t> 	wostringstream;
 
   /// Class for @c wchar_t mixed input and output memory streams.
+  _GLIBCXX_SUBSET_REMOVE(wstringstream)
   typedef basic_stringstream<wchar_t> 	wstringstream;
 #endif
   /// @}

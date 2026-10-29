@@ -208,6 +208,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   /// File position for char streams.
   typedef fpos<mbstate_t> streampos;
   /// File position for wchar_t streams.
+  _GLIBCXX_SUBSET_REMOVE(wstreampos)
   typedef fpos<mbstate_t> wstreampos;
 
 #ifdef _GLIBCXX_USE_CHAR8_T

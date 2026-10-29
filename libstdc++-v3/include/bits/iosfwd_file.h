@@ -72,15 +72,19 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
 #ifdef _GLIBCXX_USE_WCHAR_T
     /// Class for @c wchar_t file buffers.
+  _GLIBCXX_SUBSET_REMOVE(wfilebuf)
   typedef basic_filebuf<wchar_t> 	wfilebuf;
 
   /// Class for @c wchar_t input file streams.
+  _GLIBCXX_SUBSET_REMOVE(wifstream)
   typedef basic_ifstream<wchar_t> 	wifstream;
 
   /// Class for @c wchar_t output file streams.
+  _GLIBCXX_SUBSET_REMOVE(wofstream)
   typedef basic_ofstream<wchar_t> 	wofstream;
 
   /// Class for @c wchar_t mixed input and output file streams.
+  _GLIBCXX_SUBSET_REMOVE(wfstream)
   typedef basic_fstream<wchar_t> 	wfstream;
 #endif
   /// @}

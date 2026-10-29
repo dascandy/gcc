@@ -904,6 +904,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CXX11
 
 #ifdef _GLIBCXX_USE_WCHAR_T
   /** @brief Standard wide-character regular expressions. */
+  _GLIBCXX_SUBSET_REMOVE(wregex)
   typedef basic_regex<wchar_t> wregex;
 #endif
 
@@ -1106,9 +1107,11 @@ _GLIBCXX_BEGIN_NAMESPACE_CXX11
 
 #ifdef _GLIBCXX_USE_WCHAR_T
   /** @brief Regex submatch over a C-style null-terminated wide string. */
+  _GLIBCXX_SUBSET_REMOVE(wcsub_match)
   typedef sub_match<const wchar_t*>	  wcsub_match;
 
   /** @brief Regex submatch over a standard wide string. */
+  _GLIBCXX_SUBSET_REMOVE(wssub_match)
   typedef sub_match<wstring::const_iterator> wssub_match;
 #endif
 
@@ -2192,7 +2195,9 @@ _GLIBCXX_BEGIN_NAMESPACE_CXX11
   typedef match_results<const char*>		 cmatch;
   typedef match_results<string::const_iterator>	 smatch;
 #ifdef _GLIBCXX_USE_WCHAR_T
+  _GLIBCXX_SUBSET_REMOVE(wcmatch)
   typedef match_results<const wchar_t*>		 wcmatch;
+  _GLIBCXX_SUBSET_REMOVE(wsmatch)
   typedef match_results<wstring::const_iterator> wsmatch;
 #endif
 
@@ -2869,7 +2874,9 @@ _GLIBCXX_BEGIN_NAMESPACE_CXX11
   typedef regex_iterator<const char*>			cregex_iterator;
   typedef regex_iterator<string::const_iterator>	sregex_iterator;
 #ifdef _GLIBCXX_USE_WCHAR_T
+  _GLIBCXX_SUBSET_REMOVE(wcregex_iterator)
   typedef regex_iterator<const wchar_t*>		wcregex_iterator;
+  _GLIBCXX_SUBSET_REMOVE(wsregex_iterator)
   typedef regex_iterator<wstring::const_iterator>	wsregex_iterator;
 #endif
 
@@ -3127,9 +3134,11 @@ _GLIBCXX_BEGIN_NAMESPACE_CXX11
 
 #ifdef _GLIBCXX_USE_WCHAR_T
   /** @brief Token iterator for C-style NULL-terminated wide strings. */
+  _GLIBCXX_SUBSET_REMOVE(wcregex_token_iterator)
   typedef regex_token_iterator<const wchar_t*>		wcregex_token_iterator;
 
   /** @brief Token iterator for standard wide-character strings. */
+  _GLIBCXX_SUBSET_REMOVE(wsregex_token_iterator)
   typedef regex_token_iterator<wstring::const_iterator> wsregex_token_iterator;
 #endif
 

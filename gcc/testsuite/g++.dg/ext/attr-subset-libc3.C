@@ -27,6 +27,8 @@ size_t strlcat (char *, const char *, size_t);
 int wprintf_s (const wchar_t *, ...);
 int wscanf_s (const wchar_t *, ...);
 errno_t wcscpy_s (wchar_t *, rsize_t, const wchar_t *);
+size_t wcsnlen_s (const wchar_t *, size_t);
+errno_t mbstowcs_s (size_t *, wchar_t *, rsize_t, const char *, rsize_t);
 }
 
 void
@@ -63,3 +65,12 @@ g (char *d, const char *s, char **p, rsize_t *n)
   printf_s ("a");
 }
 
+void
+h (wchar_t *wd, const wchar_t *ws, size_t *n, const char *s)
+{
+  [[subset::activate(wide_string)]];
+  wprintf_s (ws);		// { dg-error "'int wprintf_s\\(\[^'\]*' was subset-removed" }
+  wcscpy_s (wd, 1, ws);		// { dg-error "'errno_t wcscpy_s\\(\[^'\]*' was subset-removed" }
+  wcsnlen_s (ws, 1);		// { dg-error "'size_t wcsnlen_s\\(\[^'\]*' was subset-removed" }
+  mbstowcs_s (n, wd, 1, s, 1);	// { dg-error "'errno_t mbstowcs_s\\(\[^'\]*' was subset-removed" }
+}

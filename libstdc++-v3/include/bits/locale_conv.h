@@ -265,7 +265,8 @@ _GLIBCXX_BEGIN_NAMESPACE_CXX11
   template<typename _Codecvt, typename _Elem = wchar_t,
 	   typename _Wide_alloc = allocator<_Elem>,
 	   typename _Byte_alloc = allocator<char>>
-    class _GLIBCXX17_DEPRECATED wstring_convert
+    class _GLIBCXX17_DEPRECATED _GLIBCXX_SUBSET_REMOVE(wstring_convert)
+    wstring_convert
     {
     public:
       typedef basic_string<char, char_traits<char>, _Byte_alloc>   byte_string;
@@ -412,7 +413,8 @@ _GLIBCXX_END_NAMESPACE_CXX11
   /// Buffer conversions
   template<typename _Codecvt, typename _Elem = wchar_t,
 	   typename _Tr = char_traits<_Elem>>
-    class _GLIBCXX17_DEPRECATED wbuffer_convert
+    class _GLIBCXX17_DEPRECATED _GLIBCXX_SUBSET_REMOVE(wbuffer_convert)
+    wbuffer_convert
     : public basic_streambuf<_Elem, _Tr>
     {
       typedef basic_streambuf<_Elem, _Tr> _Wide_streambuf;

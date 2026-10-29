@@ -4955,47 +4955,56 @@ _GLIBCXX_BEGIN_NAMESPACE_CXX11
   }
 #pragma GCC diagnostic pop
 
+  _GLIBCXX_SUBSET_REMOVE(to_wstring)
   _GLIBCXX_NODISCARD
   _GLIBCXX_TO_STRING_CONSTEXPR wstring
   to_wstring(int __val)
   { return std::__to_wstring_numeric(std::to_string(__val)); }
 
+  _GLIBCXX_SUBSET_REMOVE(to_wstring)
   _GLIBCXX_NODISCARD
   _GLIBCXX_TO_STRING_CONSTEXPR wstring
   to_wstring(unsigned __val)
   { return std::__to_wstring_numeric(std::to_string(__val)); }
 
+  _GLIBCXX_SUBSET_REMOVE(to_wstring)
   _GLIBCXX_NODISCARD
   _GLIBCXX_TO_STRING_CONSTEXPR wstring
   to_wstring(long __val)
   { return std::__to_wstring_numeric(std::to_string(__val)); }
 
+  _GLIBCXX_SUBSET_REMOVE(to_wstring)
   _GLIBCXX_NODISCARD
   _GLIBCXX_TO_STRING_CONSTEXPR wstring
   to_wstring(unsigned long __val)
   { return std::__to_wstring_numeric(std::to_string(__val)); }
 
+  _GLIBCXX_SUBSET_REMOVE(to_wstring)
   _GLIBCXX_NODISCARD
   _GLIBCXX_TO_STRING_CONSTEXPR wstring
   to_wstring(long long __val)
   { return std::__to_wstring_numeric(std::to_string(__val)); }
 
+  _GLIBCXX_SUBSET_REMOVE(to_wstring)
   _GLIBCXX_NODISCARD
   _GLIBCXX_TO_STRING_CONSTEXPR wstring
   to_wstring(unsigned long long __val)
   { return std::__to_wstring_numeric(std::to_string(__val)); }
 
 #if __glibcxx_to_string || _GLIBCXX_USE_C99_STDIO
+  _GLIBCXX_SUBSET_REMOVE(to_wstring)
   _GLIBCXX_NODISCARD
   inline wstring
   to_wstring(float __val)
   { return std::__to_wstring_numeric(std::to_string(__val)); }
 
+  _GLIBCXX_SUBSET_REMOVE(to_wstring)
   _GLIBCXX_NODISCARD
   inline wstring
   to_wstring(double __val)
   { return std::__to_wstring_numeric(std::to_string(__val)); }
 
+  _GLIBCXX_SUBSET_REMOVE(to_wstring)
   _GLIBCXX_NODISCARD
   inline wstring
   to_wstring(long double __val)

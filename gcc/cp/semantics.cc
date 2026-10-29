@@ -3023,14 +3023,27 @@ static const char *const subset_c_library_functions[] = {
   "printf_s", "vprintf_s", "fprintf_s", "vfprintf_s", "sprintf_s",
   "vsprintf_s", "snprintf_s", "vsnprintf_s",
   /* Wide input and output.  */
-  "wprintf", "fwprintf", "vwprintf", "vfwprintf", "wscanf", "fwscanf",
-  "vwscanf", "vfwscanf", "fputws", "fputwc", "putwc", "putwchar", "fgetws",
-  "fgetwc", "getwc", "getwchar", "wprintf_s", "fwprintf_s", "vwprintf_s",
-  "vfwprintf_s", "wscanf_s", "fwscanf_s", "vwscanf_s", "vfwscanf_s",
+  "wprintf", "fwprintf", "vwprintf", "vfwprintf", "swprintf", "vswprintf",
+  "wscanf", "fwscanf", "vwscanf", "vfwscanf", "swscanf", "vswscanf", "fputws",
+  "fputwc", "putwc", "putwchar", "fgetws", "fgetwc", "getwc", "getwchar",
+  "ungetwc", "fwide", "wprintf_s", "fwprintf_s", "vwprintf_s", "vfwprintf_s",
+  "swprintf_s", "vswprintf_s", "snwprintf_s", "vsnwprintf_s", "wscanf_s",
+  "fwscanf_s", "vwscanf_s", "vfwscanf_s", "swscanf_s", "vswscanf_s",
   /* Wide strings.  */
-  "wcscpy", "wcsncpy", "wcscat", "wcsncat", "wcscmp", "wcsncmp", "wcschr",
-  "wcsrchr", "wcsstr", "wcsspn", "wcscspn", "wcspbrk", "wcstok", "wcscpy_s",
-  "wcsncpy_s", "wcscat_s", "wcsncat_s", "wcstok_s",
+  "wcscpy", "wcsncpy", "wcscat", "wcsncat", "wcscmp", "wcsncmp", "wcscoll",
+  "wcsxfrm", "wcschr", "wcsrchr", "wcsstr", "wcsspn", "wcscspn", "wcspbrk",
+  "wcstok", "wcslen", "wcsftime", "wcstod", "wcstof", "wcstold", "wcstol",
+  "wcstoll", "wcstoul", "wcstoull", "wcstoimax", "wcstoumax", "wmemcpy",
+  "wmemmove", "wmemcmp", "wmemchr", "wmemset", "wcscpy_s", "wcsncpy_s",
+  "wcscat_s", "wcsncat_s", "wcstok_s", "wcsnlen_s", "wmemcpy_s", "wmemmove_s",
+  /* Conversion between narrow and wide characters.  */
+  "btowc", "wctob", "mbrtowc", "wcrtomb", "mbsrtowcs", "wcsrtombs", "mbtowc",
+  "wctomb", "mbstowcs", "wcstombs", "wcrtomb_s", "mbsrtowcs_s", "wcsrtombs_s",
+  "wctomb_s", "mbstowcs_s", "wcstombs_s",
+  /* Wide characters.  */
+  "iswalnum", "iswalpha", "iswblank", "iswcntrl", "iswdigit", "iswgraph",
+  "iswlower", "iswprint", "iswpunct", "iswspace", "iswupper", "iswxdigit",
+  "iswctype", "wctype", "towlower", "towupper", "towctrans", "wctrans",
 };
 
 /* The identifiers of subset_c_library_functions.  */
@@ -14111,6 +14124,47 @@ static const char *const subset_c_string_members[] = {
   NULL
 };
 
+/* The members of predefined subset wide_string: wchar_t, its literals,
+   and what the library has for wide characters and strings.  */
+
+static const char *const subset_wide_string_members[] = {
+  "no_wchar_t",
+  /* The C++ library.  */
+  "wstring", "wstring_view", "to_wstring", "path_wstring", "wios",
+  "wstreambuf", "wistream", "wostream", "wiostream", "wstringbuf",
+  "wistringstream", "wostringstream", "wstringstream", "wfilebuf", "wifstream",
+  "wofstream", "wfstream", "wsyncbuf", "wosyncstream", "wspanbuf",
+  "wispanstream", "wospanstream", "wspanstream", "wstreampos", "wcin", "wcout",
+  "wcerr", "wclog", "wregex", "wcsub_match", "wssub_match", "wcmatch",
+  "wsmatch", "wcregex_iterator", "wsregex_iterator", "wcregex_token_iterator",
+  "wsregex_token_iterator", "wformat_string", "wformat_context",
+  "wformat_args", "wformat_parse_context", "make_wformat_args",
+  "wstring_convert", "wbuffer_convert",
+  /* The C library: input and output.  */
+  "wprintf", "fwprintf", "vwprintf", "vfwprintf", "swprintf", "vswprintf",
+  "wscanf", "fwscanf", "vwscanf", "vfwscanf", "swscanf", "vswscanf", "fputws",
+  "fputwc", "putwc", "putwchar", "fgetws", "fgetwc", "getwc", "getwchar",
+  "ungetwc", "fwide", "wprintf_s", "fwprintf_s", "vwprintf_s", "vfwprintf_s",
+  "swprintf_s", "vswprintf_s", "snwprintf_s", "vsnwprintf_s", "wscanf_s",
+  "fwscanf_s", "vwscanf_s", "vfwscanf_s", "swscanf_s", "vswscanf_s",
+  /* Strings.  */
+  "wcscpy", "wcsncpy", "wcscat", "wcsncat", "wcscmp", "wcsncmp", "wcscoll",
+  "wcsxfrm", "wcschr", "wcsrchr", "wcsstr", "wcsspn", "wcscspn", "wcspbrk",
+  "wcstok", "wcslen", "wcsftime", "wcstod", "wcstof", "wcstold", "wcstol",
+  "wcstoll", "wcstoul", "wcstoull", "wcstoimax", "wcstoumax", "wmemcpy",
+  "wmemmove", "wmemcmp", "wmemchr", "wmemset", "wcscpy_s", "wcsncpy_s",
+  "wcscat_s", "wcsncat_s", "wcstok_s", "wcsnlen_s", "wmemcpy_s", "wmemmove_s",
+  /* Conversion between narrow and wide characters.  */
+  "btowc", "wctob", "mbrtowc", "wcrtomb", "mbsrtowcs", "wcsrtombs", "mbtowc",
+  "wctomb", "mbstowcs", "wcstombs", "wcrtomb_s", "mbsrtowcs_s", "wcsrtombs_s",
+  "wctomb_s", "mbstowcs_s", "wcstombs_s",
+  /* Characters.  */
+  "iswalnum", "iswalpha", "iswblank", "iswcntrl", "iswdigit", "iswgraph",
+  "iswlower", "iswprint", "iswpunct", "iswspace", "iswupper", "iswxdigit",
+  "iswctype", "wctype", "towlower", "towupper", "towctrans", "wctrans",
+  NULL
+};
+
 /* The members of predefined subset inefficient: what does more work than
    is usually wanted.  */
 
@@ -14133,6 +14187,7 @@ static const struct
 } subset_predefined_definitions[] = {
   { "unicode", subset_unicode_members },
   { "c_string", subset_c_string_members },
+  { "wide_string", subset_wide_string_members },
   { "inefficient", subset_inefficient_members },
 };
 

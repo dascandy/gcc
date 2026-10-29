@@ -89,8 +89,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     using smatch
       = match_results<__gnu_cxx::__normal_iterator<const char*, string>>;
 #ifdef _GLIBCXX_USE_WCHAR_T
-    using wcmatch = match_results<const wchar_t*>;
-    using wsmatch
+    using wcmatch _GLIBCXX_SUBSET_REMOVE(wcmatch)
+      = match_results<const wchar_t*>;
+    using wsmatch _GLIBCXX_SUBSET_REMOVE(wsmatch)
       = match_results<__gnu_cxx::__normal_iterator<const wchar_t*, wstring>>;
 #endif
   } // namespace pmr

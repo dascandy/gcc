@@ -89,18 +89,23 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
 #ifdef _GLIBCXX_USE_WCHAR_T
   /// Base class for @c wchar_t streams.
+  _GLIBCXX_SUBSET_REMOVE(wios)
   typedef basic_ios<wchar_t> 		wios;
 
   /// Base class for @c wchar_t buffers.
+  _GLIBCXX_SUBSET_REMOVE(wstreambuf)
   typedef basic_streambuf<wchar_t> 	wstreambuf;
 
   /// Base class for @c wchar_t input streams.
+  _GLIBCXX_SUBSET_REMOVE(wistream)
   typedef basic_istream<wchar_t> 	wistream;
 
   /// Base class for @c wchar_t output streams.
+  _GLIBCXX_SUBSET_REMOVE(wostream)
   typedef basic_ostream<wchar_t> 	wostream;
 
   /// Base class for @c wchar_t mixed input and output streams.
+  _GLIBCXX_SUBSET_REMOVE(wiostream)
   typedef basic_iostream<wchar_t> 	wiostream;
 #endif
 

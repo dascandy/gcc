@@ -95,7 +95,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 #endif
     using u16string = basic_string<char16_t>;
     using u32string = basic_string<char32_t>;
-    using wstring   = basic_string<wchar_t>;
+    using wstring _GLIBCXX_SUBSET_REMOVE(wstring) = basic_string<wchar_t>;
   } // namespace pmr
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace std

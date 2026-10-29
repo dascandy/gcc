@@ -65,10 +65,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   using spanstream  = basic_spanstream<char>;
 
 #ifdef _GLIBCXX_USE_WCHAR_T
-  using wspanbuf     = basic_spanbuf<wchar_t>;
-  using wispanstream = basic_ispanstream<wchar_t>;
-  using wospanstream = basic_ospanstream<wchar_t>;
-  using wspanstream  = basic_spanstream<wchar_t>;
+  using wspanbuf _GLIBCXX_SUBSET_REMOVE(wspanbuf) = basic_spanbuf<wchar_t>;
+  using wispanstream _GLIBCXX_SUBSET_REMOVE(wispanstream)
+    = basic_ispanstream<wchar_t>;
+  using wospanstream _GLIBCXX_SUBSET_REMOVE(wospanstream)
+    = basic_ospanstream<wchar_t>;
+  using wspanstream _GLIBCXX_SUBSET_REMOVE(wspanstream)
+    = basic_spanstream<wchar_t>;
 #endif
   /// @}
 

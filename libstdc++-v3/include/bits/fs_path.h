@@ -471,6 +471,7 @@ namespace __detail
     std::string    native_encoded_string() const;
 #endif
 #if _GLIBCXX_USE_WCHAR_T
+    _GLIBCXX_SUBSET_REMOVE(path_wstring)
     std::wstring   wstring() const;
 #endif
 #ifdef _GLIBCXX_USE_CHAR8_T
@@ -497,6 +498,7 @@ namespace __detail
     std::string    generic_native_encoded_string() const;
 #endif
 #if _GLIBCXX_USE_WCHAR_T
+    _GLIBCXX_SUBSET_REMOVE(path_wstring)
     std::wstring   generic_wstring() const;
 #endif
 #ifdef _GLIBCXX_USE_CHAR8_T

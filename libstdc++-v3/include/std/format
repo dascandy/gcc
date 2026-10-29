@@ -149,14 +149,16 @@ namespace __format
 
   using format_context  = __format::__format_context<char>;
 #ifdef _GLIBCXX_USE_WCHAR_T
-  using wformat_context = __format::__format_context<wchar_t>;
+  using wformat_context _GLIBCXX_SUBSET_REMOVE(wformat_context)
+    = __format::__format_context<wchar_t>;
 #endif
 
   // [format.args], class template basic_format_args
   template<typename _Context> class basic_format_args;
   using format_args = basic_format_args<format_context>;
 #ifdef _GLIBCXX_USE_WCHAR_T
-  using wformat_args = basic_format_args<wformat_context>;
+  using wformat_args _GLIBCXX_SUBSET_REMOVE(wformat_args)
+    = basic_format_args<wformat_context>;
 #endif
 
   // [format.arguments], arguments
@@ -196,7 +198,7 @@ namespace __format
 
 #ifdef _GLIBCXX_USE_WCHAR_T
   template<typename... _Args>
-    using wformat_string
+    using wformat_string _GLIBCXX_SUBSET_REMOVE(wformat_string)
       = basic_format_string<wchar_t, type_identity_t<_Args>...>;
 #endif
 
@@ -300,7 +302,8 @@ namespace __format
   template<typename _CharT> class basic_format_parse_context;
   using format_parse_context = basic_format_parse_context<char>;
 #ifdef _GLIBCXX_USE_WCHAR_T
-  using wformat_parse_context = basic_format_parse_context<wchar_t>;
+  using wformat_parse_context _GLIBCXX_SUBSET_REMOVE(wformat_parse_context)
+    = basic_format_parse_context<wchar_t>;
 #endif
 
   template<typename _CharT>
@@ -5180,6 +5183,7 @@ namespace __format
   /// Capture formatting arguments for use by `std::vformat` (for wide output).
   template<typename... _Args>
     [[nodiscard,__gnu__::__always_inline__]]
+    _GLIBCXX_SUBSET_REMOVE(make_wformat_args)
     inline _GLIBCXX_CONSTEXPR_FORMAT auto
     make_wformat_args(_Args&... __args) noexcept
     { return std::make_format_args<wformat_context>(__args...); }

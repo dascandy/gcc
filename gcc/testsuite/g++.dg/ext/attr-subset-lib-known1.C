@@ -5,4 +5,5 @@
 [[subset::activate(cout)]];		// { dg-warning "unknown subset 'cout'" }
 [[subset::activate(unicode)]];
 [[subset::activate(c_string)]];
+[[subset::activate(wide_string)]];
 [[subset::activate(inefficient)]];

@@ -61,8 +61,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   using osyncstream = basic_osyncstream<char>;
 
 #ifdef _GLIBCXX_USE_WCHAR_T
-  using wsyncbuf = basic_syncbuf<wchar_t>;
-  using wosyncstream = basic_osyncstream<wchar_t>;
+  using wsyncbuf _GLIBCXX_SUBSET_REMOVE(wsyncbuf) = basic_syncbuf<wchar_t>;
+  using wosyncstream _GLIBCXX_SUBSET_REMOVE(wosyncstream)
+    = basic_osyncstream<wchar_t>;
 #endif
   /// @}
 

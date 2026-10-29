@@ -79,6 +79,7 @@ _GLIBCXX_END_NAMESPACE_CXX11
   typedef basic_string<char>    string;
 
   /// A string of @c wchar_t
+  _GLIBCXX_SUBSET_REMOVE(wstring)
   typedef basic_string<wchar_t> wstring;
 
 #ifdef _GLIBCXX_USE_CHAR8_T
