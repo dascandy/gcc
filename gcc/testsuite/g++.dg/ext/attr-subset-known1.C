@@ -51,7 +51,7 @@ struct [[subset::remove(cls)]] C {};
 [[subset::activate(cls), subset::activate(var)]];
 
 // An ignored removal does not make a subset known.
-[[subset::remove(ignored)]] extern int e;	// { dg-warning "only applies to" }
+struct [[subset::remove(ignored)]] F;		// { dg-warning "only applies to" }
 [[subset::activate(ignored)]];			// { dg-warning "unknown subset 'ignored'" }
 
 void

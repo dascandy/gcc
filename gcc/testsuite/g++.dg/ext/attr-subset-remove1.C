@@ -25,6 +25,7 @@ template <typename T> struct [[subset::remove(core)]] S2 {};
 template <typename T> struct [[subset::remove(core)]] S2<T *> {};
 [[subset::remove(core)]] int v1;
 [[subset::remove(core)]] extern int v2 = 1;	// { dg-warning "initialized and declared" }
+[[subset::remove(core)]] extern int v5;
 template <typename T> [[subset::remove(core)]] T v3 = T ();
 [[using subset: remove(core)]] int v4;
 [[subset::remove(core)]] typedef int T1;
@@ -39,7 +40,6 @@ g ()
 }
 
 // Rejected.
-[[subset::remove(core)]] extern int e1;		// { dg-warning "'subset::remove' attribute only applies to" }
 struct S3 {
   [[subset::remove(core)]] static int s;		// { dg-warning "only applies to" }
   [[subset::remove(core)]] int d;			// { dg-warning "only applies to" }
@@ -47,6 +47,11 @@ struct S3 {
 struct [[subset::remove(core)]] F;			// { dg-warning "only applies to" }
 void p ([[subset::remove(core)]] int);		// { dg-warning "only applies to" }
 enum [[subset::remove(core)]] E { e };		// { dg-warning "only applies to" }
+void
+h ()
+{
+  [[subset::remove(core)]] extern int e1;		// { dg-warning "only applies to" }
+}
 int [[subset::remove(core)]] t;			// { dg-warning "attribute ignored" }
 
 [[subset::remove]] void a1 ();			// { dg-error "wrong number of arguments" }

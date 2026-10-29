@@ -5717,8 +5717,8 @@ void
 warn_misplaced_subset_remove (tree name)
 {
   warning (OPT_Wattributes, "%<subset::%E%> attribute only applies to "
-	   "functions, class definitions, variable definitions and aliases",
-	   name);
+	   "functions, class definitions, namespace-scope variables, "
+	   "variable definitions and aliases", name);
 }
 
 /* Handle a "subset::remove" attribute; arguments as in
@@ -5761,7 +5761,14 @@ handle_subset_remove_attribute (tree *node, tree name, tree args, int flags,
     /* A typedef or alias, whose underlying type is not set yet.  */
     ok = !DECL_ARTIFICIAL (t) && !DECL_TEMPLATE_PARM_P (t);
   else if (VAR_P (t))
-    ok = !DECL_EXTERNAL (t);
+    /* A variable defined in another translation unit, such as std::cout,
+       can be removed where it is declared at namespace scope.  A static
+       data member is removed at its definition instead, and a block-scope
+       extern declaration cannot remove it.  That one is not marked
+       DECL_LOCAL_DECL_P yet, but is the only one at namespace scope that is
+       declared in a function.  */
+    ok = (!DECL_EXTERNAL (t)
+	  || (DECL_NAMESPACE_SCOPE_P (t) && !current_function_decl));
   else if (TYPE_P (t))
     ok = ((flags & (int) ATTR_FLAG_TYPE_IN_PLACE)
 	  && CLASS_TYPE_P (t)

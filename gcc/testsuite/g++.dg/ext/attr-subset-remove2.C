@@ -36,6 +36,7 @@ template <> struct [[subset::remove(core)]] E<int> { int t; };
 
 // Variable and variable template.
 [[subset::remove(core)]] int v;
+[[subset::remove(core)]] extern int ev;
 template <typename T> [[subset::remove(core)]] T vt = T ();
 
 void
@@ -59,6 +60,7 @@ use ()
   E<long> e1;
   E<int> e2;		// { dg-error "'E<int>' was subset-removed" }
   v = 1;		// { dg-error "'v' was subset-removed" }
+  ev = 1;		// { dg-error "'ev' was subset-removed" }
   vt<int> = 1;		// { dg-error "'vt<int>' was subset-removed" }
 }
 
@@ -77,6 +79,7 @@ use_inactive ()
   P<char *> p;
   E<int> e;
   v = 2;
+  ev = 2;
   vt<char> = 2;
   {
     [[subset::activate(other)]];
