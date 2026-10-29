@@ -439,7 +439,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CXX11
    * @since C++11
    */
   template<typename _Ch_type, typename _Rx_traits = regex_traits<_Ch_type>>
-    class basic_regex
+    class _GLIBCXX_SUBSET_REMOVE(basic_regex) basic_regex
     {
     public:
       static_assert(is_same<_Ch_type, typename _Rx_traits::char_type>::value,

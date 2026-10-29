@@ -933,6 +933,14 @@ namespace __gnu_cxx
 # define _GLIBCXX_NO_SPECIALIZATIONS
 #endif
 
+// Macro to make using a declaration an error while subset group G is
+// active.
+#if __cplusplus >= 201103L && __has_cpp_attribute(subset::remove)
+# define _GLIBCXX_SUBSET_REMOVE(G) [[subset::remove(G)]]
+#else
+# define _GLIBCXX_SUBSET_REMOVE(G)
+#endif
+
 // Whether deducing this is usable either officially, if in C++23 mode, or
 // as an extension (Clang doesn't support the latter).
 #if __cpp_explicit_this_parameter \

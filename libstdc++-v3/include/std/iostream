@@ -62,7 +62,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   */
   ///@{
   extern istream cin;		///< Linked to standard input
+  _GLIBCXX_SUBSET_REMOVE(cout)
   extern ostream cout;		///< Linked to standard output
+  _GLIBCXX_SUBSET_REMOVE(cerr)
   extern ostream cerr;		///< Linked to standard error (unbuffered)
   extern ostream clog;		///< Linked to standard error (buffered)
 
