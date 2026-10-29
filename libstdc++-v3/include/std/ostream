@@ -162,6 +162,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 #endif // __glibcxx_syncbuf
 
 #if __cpp_lib_print // C++ >= 23
+  _GLIBCXX_SUBSET_REMOVE(vprint_nonunicode)
   void
   vprint_nonunicode(ostream& __os, string_view __fmt, format_args __args);
 

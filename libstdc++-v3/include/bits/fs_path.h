@@ -463,9 +463,11 @@ namespace __detail
       string(const _Allocator& __a = _Allocator()) const;
 
     _GLIBCXX26_DEPRECATED_SUGGEST("display_string' or 'native_encoded_string")
+    _GLIBCXX_SUBSET_REMOVE(path_string)
     std::string    string() const;
 #if __glibcxx_format_path >= 202506L // C++ >= 26 && HOSTED
     std::string    display_string() const;
+    _GLIBCXX_SUBSET_REMOVE(path_string)
     std::string    native_encoded_string() const;
 #endif
 #if _GLIBCXX_USE_WCHAR_T
@@ -487,9 +489,11 @@ namespace __detail
       generic_string(const _Allocator& __a = _Allocator()) const;
 
     _GLIBCXX26_DEPRECATED_SUGGEST("generic_display_string' or 'generic_native_encoded_string")
+    _GLIBCXX_SUBSET_REMOVE(path_string)
     std::string    generic_string() const;
 #if __glibcxx_format_path >= 202506L // C++ >= 26 && HOSTED
     std::string    generic_display_string() const;
+    _GLIBCXX_SUBSET_REMOVE(path_string)
     std::string    generic_native_encoded_string() const;
 #endif
 #if _GLIBCXX_USE_WCHAR_T

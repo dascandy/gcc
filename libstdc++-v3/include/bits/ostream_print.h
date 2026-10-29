@@ -55,6 +55,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 #endif
 
   _GLIBCXX_PRINT_INLINE_USED
+  _GLIBCXX_SUBSET_REMOVE(vprint_nonunicode)
   inline void
   vprint_nonunicode(ostream& __os, string_view __fmt, format_args __args)
   {

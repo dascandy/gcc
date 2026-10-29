@@ -2998,6 +2998,77 @@ subset_add_known (tree group)
   known_subsets->add (group);
 }
 
+/* The functions of the C library that are removed as by subset::remove,
+   each under the subset group of its own name.  The C library cannot be
+   changed to say so, so the removal is added where they are declared.  */
+
+static const char *const subset_c_library_functions[] = {
+  /* Files.  */
+  "fopen", "freopen", "remove", "rename", "fopen_s", "freopen_s",
+  /* Narrow strings.  */
+  "strcpy", "strncpy", "strncat", "strndup", "strcasecmp", "_stricmp",
+  "strncasecmp", "_strnicmp", "strchr", "strstr", "strncpy_s", "strncat_s",
+  /* Narrow characters.  */
+  "isalpha", "isalnum", "isupper", "islower", "isprint", "isgraph", "ispunct",
+  "toupper", "tolower",
+  /* Narrow input.  */
+  "fgets", "gets_s",
+  /* Narrow output.  */
+  "printf", "vprintf", "fprintf", "vfprintf", "snprintf", "vsnprintf", "puts",
+  "fputs", "putchar", "putc", "fputc", "printf_s", "vprintf_s", "fprintf_s",
+  "vfprintf_s", "snprintf_s", "vsnprintf_s",
+  /* Wide input and output.  */
+  "wprintf", "fwprintf", "vwprintf", "vfwprintf", "wscanf", "fwscanf",
+  "vwscanf", "vfwscanf", "fputws", "fputwc", "putwc", "putwchar", "fgetws",
+  "fgetwc", "getwc", "getwchar", "wprintf_s", "fwprintf_s", "vwprintf_s",
+  "vfwprintf_s", "wscanf_s", "fwscanf_s", "vwscanf_s", "vfwscanf_s",
+};
+
+/* The identifiers of subset_c_library_functions.  */
+
+static GTY(()) hash_set<tree> *subset_c_library_names;
+
+/* If DECL is a declaration of a function of the C library that is in
+   subset_c_library_functions, return the attribute list ATTRS for it with
+   a subset::remove attribute added for it, else ATTRS.  That is a function
+   in the global namespace or in std, which a C library header or the C++
+   library declares with C linkage, or with C++ linkage as an overload in a
+   system header.  A template, such as the std::remove algorithm or the
+   std::isalpha of <locale>, is not one.  */
+
+tree
+subset_add_c_library_removal (tree decl, tree attrs)
+{
+  if (TREE_CODE (decl) != FUNCTION_DECL
+      || !DECL_NAME (decl)
+      || processing_template_decl
+      || (DECL_LANG_SPECIFIC (decl) && DECL_TEMPLATE_INFO (decl)))
+    return attrs;
+  tree ctx = CP_DECL_CONTEXT (decl);
+  if (ctx != global_namespace && ctx != std_node)
+    return attrs;
+  if (!DECL_EXTERN_C_P (decl)
+      && !in_system_header_at (DECL_SOURCE_LOCATION (decl)))
+    return attrs;
+  if (!subset_c_library_names)
+    {
+      subset_c_library_names = hash_set<tree>::create_ggc (128);
+      for (const char *fn : subset_c_library_functions)
+	subset_c_library_names->add (get_identifier (fn));
+    }
+  tree group = DECL_NAME (decl);
+  if (!subset_c_library_names->contains (group))
+    return attrs;
+  /* The attributes of a function are applied more than once.  */
+  for (tree a = lookup_attribute ("subset", "remove", DECL_ATTRIBUTES (decl));
+       a; a = lookup_attribute ("subset", "remove", TREE_CHAIN (a)))
+    if (TREE_VALUE (TREE_VALUE (a)) == group)
+      return attrs;
+  tree name = build_tree_list (get_identifier ("subset"),
+			       get_identifier ("remove"));
+  return tree_cons (name, build_tree_list (NULL_TREE, group), attrs);
+}
+
 /* The subset groups defined by subset::define, each mapped to a TREE_LIST
    of the groups it expands to, none of which is itself defined.  */
 
@@ -13981,18 +14052,60 @@ build_transaction_expr (location_t loc, tree expr, int flags, tree noex)
   return ret;
 }
 
+/* The members of predefined subset unicode: what gives wrong results for
+   text that is not ASCII.  First those with a replacement that handles it,
+   then those without one that are wrong for nearly all of it.  */
+
+static const char *const subset_unicode_members[] = {
+  /* Use std::print and std::println.  */
+  "cout", "cerr", "clog", "wcout", "wcerr", "wclog", "vprint_nonunicode",
+  "vprint_nonunicode_buffered", "printf", "vprintf", "fprintf", "vfprintf",
+  "puts", "fputs", "putchar", "putc", "fputc", "printf_s", "vprintf_s",
+  "fprintf_s", "vfprintf_s", "wprintf", "fwprintf", "vwprintf", "vfwprintf",
+  "fputws", "fputwc", "putwc", "putwchar", "wprintf_s", "fwprintf_s",
+  "vwprintf_s", "vfwprintf_s",
+  /* Use std::format, std::string, a std::string_view or std::getline.
+     These cut text at a number of bytes.  */
+  "snprintf", "vsnprintf", "snprintf_s", "vsnprintf_s", "strncpy", "strncat",
+  "strndup", "strncpy_s", "strncat_s", "fgets", "gets_s",
+  /* Use std::fstream and std::filesystem with a std::filesystem::path, and
+     its u8string or display_string.  */
+  "fopen", "freopen", "fopen_s", "freopen_s", "remove", "rename",
+  "fstream_narrow_name", "path_string",
+  /* No replacement.  These compare text with ASCII case folding.  */
+  "strcasecmp", "_stricmp", "strncasecmp", "_strnicmp",
+  /* No replacement.  These classify or convert single bytes.  */
+  "basic_regex", "isalpha", "isalnum", "isupper", "islower", "isprint",
+  "isgraph", "ispunct", "toupper", "tolower",
+  /* No replacement.  These fail on text that is not ASCII unless a locale
+     that can represent it is set.  */
+  "wcin", "fgetws", "fgetwc", "getwc", "getwchar", "wscanf", "fwscanf",
+  "vwscanf", "vfwscanf", "wscanf_s", "fwscanf_s", "vwscanf_s", "vfwscanf_s",
+  NULL
+};
+
+/* The members of predefined subset inefficient: what does more work than
+   is usually wanted.  */
+
+static const char *const subset_inefficient_members[] = {
+  /* Use '\n', and flush explicitly when that is wanted.  */
+  "endl",
+  NULL
+};
+
 /* The predefined subsets that are defined as by subset::define, each with
-   the subsets it expands to, followed by NULLs.  Unlike with subset::define,
-   the members need not be known: they can be subsets that the library
-   removes under, which become known when its headers are included.  */
+   the NULL-terminated list of the subsets it expands to.  Unlike with
+   subset::define, the members need not be known: they can be subsets that
+   the library removes under, which become known when its headers are
+   included.  */
 
 static const struct
 {
   const char *name;
-  const char *members[4];
+  const char *const *members;
 } subset_predefined_definitions[] = {
-  { "unicode", { "cout", "cerr", "basic_regex", NULL } },
-  { "inefficient", { "endl", NULL } },
+  { "unicode", subset_unicode_members },
+  { "inefficient", subset_inefficient_members },
 };
 
 void
@@ -14019,9 +14132,8 @@ init_cp_semantics (void)
   for (const auto &def : subset_predefined_definitions)
     {
       tree members = NULL_TREE;
-      for (const char *member : def.members)
-	if (member)
-	  members = tree_cons (NULL_TREE, get_identifier (member), members);
+      for (const char *const *member = def.members; *member; ++member)
+	members = tree_cons (NULL_TREE, get_identifier (*member), members);
       subset_add_definition (get_identifier (def.name), nreverse (members));
     }
 }

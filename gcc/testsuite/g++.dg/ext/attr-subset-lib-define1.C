@@ -13,6 +13,6 @@ f ()
 {
   [[subset::activate(mine)]];
   std::cout << std::endl;	// { dg-error "'std::cout' was subset-removed" }
-				// { dg-error "endl.*was subset-removed" "" { target *-*-* } .-1 }
-  std::clog << "x";
+				// { dg-error "std::endl\\(\[^'\]*' was subset-removed" "" { target *-*-* } .-1 }
+  std::clog << "x";		// { dg-error "'std::clog' was subset-removed" }
 }

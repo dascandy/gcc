@@ -2144,6 +2144,9 @@ cplus_decl_attributes (tree *decl, tree attributes, int flags)
 	}
     }
 
+  /* Add the subset::remove attribute of a C library function.  */
+  attributes = subset_add_c_library_removal (*decl, attributes);
+
   tree late_attrs = NULL_TREE;
   if (processing_template_decl)
     {

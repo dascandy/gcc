@@ -276,6 +276,7 @@ namespace __format
 #endif
 
   _GLIBCXX_PRINT_INLINE_USED
+  _GLIBCXX_SUBSET_REMOVE(vprint_nonunicode)
   inline void
   vprint_nonunicode(FILE* __stream, string_view __fmt, format_args __args)
   {
@@ -283,6 +284,7 @@ namespace __format
   }
 
   _GLIBCXX_PRINT_INLINE_USED
+  _GLIBCXX_SUBSET_REMOVE(vprint_nonunicode_buffered)
   inline void
   vprint_nonunicode_buffered(FILE* __stream, string_view __fmt,
 			     format_args __args)

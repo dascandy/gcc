@@ -8571,6 +8571,7 @@ extern bool subset_known_p			(tree);
 extern void subset_add_known			(tree);
 extern void subset_note_unknown			(tree, bool, location_t);
 extern void subset_add_removal			(tree);
+extern tree subset_add_c_library_removal	(tree, tree);
 extern bool subset_defined_p			(tree);
 extern void subset_define			(location_t, tree, tree);
 extern bool subset_redundant_p			(tree, bool, location_t);
