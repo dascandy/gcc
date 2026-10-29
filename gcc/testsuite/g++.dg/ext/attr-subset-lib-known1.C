@@ -4,4 +4,5 @@
 // are not.
 [[subset::activate(cout)]];		// { dg-warning "unknown subset 'cout'" }
 [[subset::activate(unicode)]];
+[[subset::activate(c_string)]];
 [[subset::activate(inefficient)]];
