@@ -2166,6 +2166,7 @@ struct GTY(()) saved_scope {
   int unevaluated_operand;
   int unevaluated_typeid_cutoff;
   int inhibit_evaluation_warnings;
+  int contract_never_evaluated;
   int noexcept_operand;
   int ref_temp_count;
 
@@ -6375,6 +6376,15 @@ extern int cp_unevaluated_operand;
 
 extern int cp_unevaluated_typeid_cutoff;
 
+/* In contracts.cc.  D4405 (-fcontract-analysis-skip-dead-calls): nonzero
+   while the parser or template substitution builds code that is never
+   evaluated -- an arm of `?:', the second operand of `&&' or `||', or a
+   substatement of `if', behind a constant condition.  Saved
+   and cleared, as c_inhibit_evaluation_warnings is, in a nested context
+   that is evaluated even if the enclosing one is not.  */
+
+extern int contract_never_evaluated;
+
 /* RAII class used to inhibit the evaluation of operands during parsing
    and template instantiation.  Evaluation warnings are also inhibited.
    TYPEID_OPERAND: this is a typeid operand's own probe, so it should
@@ -6406,11 +6416,14 @@ public:
       {
 	cp_unevaluated_operand = c_inhibit_evaluation_warnings = 0;
 	cp_unevaluated_typeid_cutoff = 0;
+	contract_never_evaluated = 0;
       } }
   ~cp_evaluated ()
   { cp_unevaluated_operand = uneval;
     c_inhibit_evaluation_warnings = inhibit;
     cp_unevaluated_typeid_cutoff = typeid_cutoff; }
+  /* D4405: restored after the destructor's body.  */
+  temp_override<int> never_evaluated { contract_never_evaluated };
 };
 
 /* in pt.cc  */
