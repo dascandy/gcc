@@ -2164,6 +2164,8 @@ begin_compound_stmt (unsigned int flags)
 {
   tree r;
 
+  push_policy_state ();
+
   if (flags & BCS_NO_SCOPE)
     {
       r = push_stmt_list ();
@@ -2236,6 +2238,122 @@ finish_compound_stmt (tree stmt)
 
   /* ??? See c_end_compound_stmt wrt statement expressions.  */
   add_stmt (stmt);
+
+  pop_policy_state ();
+}
+
+/* The active set of policies, as a chain of changes: each TREE_LIST has a
+   policy group in TREE_PURPOSE, and boolean_true_node if the group was
+   activated or boolean_false_node if it was suppressed in TREE_VALUE,
+   relative to the set in its TREE_CHAIN.  NULL_TREE is the empty set.
+   Nodes are never modified, so a saved value stays valid.  */
+
+tree current_policy_state;
+
+/* The values of current_policy_state saved by the enclosing scopes.  */
+
+static GTY(()) vec<tree, va_gc> *policy_state_stack;
+
+/* Return true if policy GROUP is in the active set.
+
+   Activating a policy may only make well-formed code ill-formed; it must
+   never change what well-formed code means.  Callers of this function, and
+   of the functions built on it, may therefore only use the result to decide
+   whether to emit a diagnostic.  They must not use it to change the trees
+   being built, the result of name lookup or overload resolution, or whether
+   a substitution fails: in particular they must not return error_mark_node
+   or fail a substitution because a policy is active.  */
+
+bool
+policy_active_p (tree group)
+{
+  for (tree t = current_policy_state; t; t = TREE_CHAIN (t))
+    if (TREE_PURPOSE (t) == group)
+      return TREE_VALUE (t) == boolean_true_node;
+  return false;
+}
+
+/* Return true if policy GROUP is active and applies to code at LOC.  The
+   policies never apply to code in a system header: users cannot change it,
+   and it is where the low-level features that policies disallow are used to
+   build the safer ones.  */
+
+bool
+policy_active_at_p (tree group, location_t loc)
+{
+  return !in_system_header_at (loc) && policy_active_p (group);
+}
+
+/* The policy groups that can be activated or suppressed: the predefined
+   ones, and those that something was removed under.  */
+
+static GTY(()) hash_set<tree> *known_policies;
+
+/* Return true if policy GROUP is in the known-policy table.  */
+
+bool
+policy_known_p (tree group)
+{
+  return known_policies && known_policies->contains (group);
+}
+
+/* Add policy GROUP to the known-policy table.  */
+
+void
+policy_add_known (tree group)
+{
+  if (!known_policies)
+    known_policies = hash_set<tree>::create_ggc (8);
+  known_policies->add (group);
+}
+
+/* Return true if setting policy GROUP active if ACTIVE, else suppressing
+   it, would not change the active set.  */
+
+bool
+policy_unchanged_p (tree group, bool active)
+{
+  return policy_active_p (group) == active;
+}
+
+/* Add policy GROUP to the active set if ACTIVE, else remove it.  */
+
+void
+policy_set_active (tree group, bool active)
+{
+  if (policy_active_p (group) != active)
+    current_policy_state
+      = tree_cons (group, active ? boolean_true_node : boolean_false_node,
+		   current_policy_state);
+}
+
+/* Save the active set of policies on entry to a scope.  */
+
+void
+push_policy_state (void)
+{
+  vec_safe_push (policy_state_stack, current_policy_state);
+}
+
+/* Restore the active set of policies on exit from a scope.  */
+
+void
+pop_policy_state (void)
+{
+  gcc_checking_assert (!vec_safe_is_empty (policy_state_stack));
+  current_policy_state = policy_state_stack->pop ();
+}
+
+/* Check that every scope that saved the active set of policies restored
+   it.  */
+
+static void
+check_policy_state_balance (void)
+{
+  /* Error recovery can leave a scope open.  */
+  if (seen_error ())
+    return;
+  gcc_checking_assert (vec_safe_is_empty (policy_state_stack));
 }
 
 /* Finish an asm string literal, which can be a string literal
@@ -4110,6 +4228,8 @@ finish_fname (tree id)
 void
 finish_translation_unit (void)
 {
+  check_policy_state_balance ();
+
   /* In case there were missing closebraces,
      get us back to the global binding level.  */
   pop_everything ();

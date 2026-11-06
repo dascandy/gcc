@@ -8638,6 +8638,15 @@ enum {
 extern tree begin_compound_stmt			(unsigned int);
 
 extern void finish_compound_stmt		(tree);
+extern GTY(()) tree current_policy_state;
+extern bool policy_active_p			(tree);
+extern bool policy_active_at_p			(tree, location_t);
+extern void policy_set_active			(tree, bool);
+extern bool policy_known_p			(tree);
+extern void policy_add_known			(tree);
+extern bool policy_unchanged_p			(tree, bool);
+extern void push_policy_state			(void);
+extern void pop_policy_state			(void);
 extern tree finish_asm_string_expression	(location_t, tree);
 extern tree finish_asm_stmt			(location_t, int, tree, tree,
 						 tree, tree, tree, bool, bool);
@@ -8953,6 +8962,7 @@ extern bool is_byte_access_type			(tree);
 extern bool is_byte_access_type_not_plain_char	(tree);
 extern const struct scoped_attribute_specs cxx_gnu_attribute_table;
 extern const struct scoped_attribute_specs cxx_clang_attribute_table;
+extern const struct scoped_attribute_specs cxx_policy_attribute_table;
 extern const struct scoped_attribute_specs std_attribute_table;
 extern const struct scoped_attribute_specs internal_attribute_table;
 extern tree make_ptrmem_cst			(tree, tree);
