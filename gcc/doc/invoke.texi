@@ -3935,13 +3935,21 @@ themselves, a term applies in a system header too.  For example:
 int get (int i) pre <policy(bounds)> (i >= 0);   // always enforced
 @end smallexample
 
-Several terms restrict the assertion when any of them is active.  A label
-that is nothing but terms needs no other option.  Whether a group is active
-is decided where the assertion is written, also for a member function, whose
+Several terms restrict the assertion when any of them is active.  Terms can
+be combined with an assertion-control label under
+@option{-fcontracts-p3400}, as in @code{<my_label | policy(bounds)>}, the
+semantics allowed being those of the label that the terms also allow, and
+with @code{terminating} under @option{-fcontracts-p4451}; a label that is
+nothing but terms needs neither option.  Whether a group is active is
+decided where the assertion is written, also for a member function, whose
 contract assertions are otherwise parsed with the class complete, and for a
 template, whatever the policies where it is instantiated.  It can differ
 between translation units, which can then evaluate the same assertion with
 different semantics.
+@code{policy} is an identifier with special meaning only as a whole operand
+of the top-level @code{|}; elsewhere at the top level of the specifier it is
+an error, and a function named @code{policy} is called as
+@code{::policy(@var{x})} or @code{(policy(@var{x}))}.
 
 @opindex fcontracts-prove-fold
 @opindex fno-contracts-prove-fold

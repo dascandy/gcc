@@ -35486,19 +35486,57 @@ cp_policy_identifier_p (const cp_token *tok)
   return tok->type == CPP_NAME && id_equal (tok->u.value, "policy");
 }
 
-/* If the assertion-control-specifier whose `<' is the next token is made of
-   nothing but `policy (group)' terms, the operands of its top-level `|'
-   chain, take the terms out of it and return them as the TREE_LIST that
-   CONTRACT_POLICY_LABELS holds.  Otherwise return NULL_TREE, and leave the
-   specifier to cp_parser_terminating_specifier and
-   cp_parser_assertion_control_specifier.
+/* Return true if TYPE is the token of an operator that binds less tightly
+   than `|': one that would take a `policy (group)' term next to it as its
+   operand rather than leave it to the top-level `|'.  */
 
-   Top level means outside any bracketed group or template-argument-list,
-   as cp_assertion_control_end counts them: `policy' is an identifier with
-   special meaning there, not looked up.  Whether a group is active is
-   decided here, where the assertion is written, also for a function
-   contract specifier whose predicate is deferred.  The terms, and the `|'
-   that joined them, are purged, and the specifier, now empty, consumed.
+static bool
+cp_binds_looser_than_bitor_p (enum cpp_ttype type)
+{
+  switch (type)
+    {
+    case CPP_AND_AND:
+    case CPP_OR_OR:
+    case CPP_QUERY:
+    case CPP_COMMA:
+    case CPP_EQ:
+    case CPP_PLUS_EQ:
+    case CPP_MINUS_EQ:
+    case CPP_MULT_EQ:
+    case CPP_DIV_EQ:
+    case CPP_MOD_EQ:
+    case CPP_AND_EQ:
+    case CPP_OR_EQ:
+    case CPP_XOR_EQ:
+    case CPP_LSHIFT_EQ:
+    case CPP_RSHIFT_EQ:
+      return true;
+    default:
+      return false;
+    }
+}
+
+/* Take the `policy (group)' terms out of the assertion-control-specifier
+   whose `<' is the next token, and return them as the TREE_LIST that
+   CONTRACT_POLICY_LABELS holds, or NULL_TREE if it has none.
+
+   A term is a whole operand of the specifier's top-level `|' chain, top
+   level meaning outside any bracketed group or template-argument-list, as
+   cp_assertion_control_end counts them: `policy' is an identifier with
+   special meaning there, not looked up.  Whether its group is active is
+   decided here, where the assertion is written, also when the rest of the
+   label is deferred.  The terms, and the `|' that joined them to the rest,
+   are purged, leaving the specifier to cp_parser_terminating_specifier and
+   cp_parser_assertion_control_specifier as if they had never been written,
+   or, if nothing is left, consumed.
+
+   A term written anywhere else -- an operand of another operator, or of a
+   `|' under an operator that binds less tightly -- would apply to the whole
+   assertion in a place where it reads as applying to part of the label, so
+   it is diagnosed rather than taken; so is `policy (...)' as an operand
+   with anything but an identifier.  A function named `policy' can still be
+   called in a label as `::policy (x)' or `(policy (x))'.  On an error the
+   specifier is skipped.
 
    The specifier can be parsed again after a tentative parse is rolled back,
    by which time the terms are gone from the token stream: the result is
@@ -35532,6 +35570,8 @@ cp_parser_contract_policy_terms (cp_parser *parser)
 	 SEPS[K] the index of the `|' after it.  */
       auto_vec<std::pair<unsigned, unsigned>, 8> ops;
       auto_vec<unsigned, 8> seps;
+      auto_vec<unsigned, 8> policies;
+      cp_token *looser = NULL;
       unsigned nest = 0, angle = 0, start = 1;
       for (unsigned i = 1; i < close; ++i)
 	{
@@ -35569,15 +35609,37 @@ cp_parser_contract_policy_terms (cp_parser *parser)
 		}
 	      break;
 	    default:
+	      if (top && cp_policy_identifier_p (tok)
+		  && toks[i + 1]->type == CPP_OPEN_PAREN
+		  && (i == 1
+		      || (toks[i - 1]->type != CPP_SCOPE
+			  && toks[i - 1]->type != CPP_DOT
+			  && toks[i - 1]->type != CPP_DEREF)))
+		policies.safe_push (i);
+	      else if (top && !looser
+		       && cp_binds_looser_than_bitor_p (tok->type))
+		looser = tok;
 	      break;
 	    }
 	}
       ops.safe_push (std::make_pair (start, close));
 
-      /* Which operands are terms.  A specifier with anything else is left
-	 alone.  */
+      /* Which operands are terms.  Every top-level `policy (' has to start
+	 one.  */
+      /* The index of the `)' that closes the `(' at TOKS[I].  */
+      auto paren_end = [&] (unsigned i)
+	{
+	  unsigned depth = 0;
+	  for (; i < close; ++i)
+	    if (toks[i]->type == CPP_OPEN_PAREN)
+	      ++depth;
+	    else if (toks[i]->type == CPP_CLOSE_PAREN && !--depth)
+	      return i;
+	  return close;
+	};
+
       auto_vec<bool, 8> term;
-      bool all = true;
+      bool any = false, bad = false;
       for (auto op : ops)
 	{
 	  bool t = (op.second - op.first == 4
@@ -35586,9 +35648,40 @@ cp_parser_contract_policy_terms (cp_parser *parser)
 		    && toks[op.first + 2]->type == CPP_NAME
 		    && toks[op.first + 3]->type == CPP_CLOSE_PAREN);
 	  term.safe_push (t);
-	  all &= t;
+	  any |= t;
 	}
-      if (!all)
+      for (unsigned p : policies)
+	{
+	  unsigned k = 0;
+	  while (ops[k].second <= p)
+	    ++k;
+	  if (term[k])
+	    continue;
+	  if (ops[k].first == p && paren_end (p + 1) == ops[k].second - 1)
+	    error_at (toks[p + 2]->location,
+		      "expected a policy group name");
+	  else
+	    error_at (toks[p]->location,
+		      "%<policy%> term must be an operand of the top-level "
+		      "%<|%> of an assertion-control-specifier");
+	  bad = true;
+	  break;
+	}
+      if (!bad && any && looser)
+	{
+	  error_at (looser->location,
+		    "operator binds less tightly than %<|%> in an "
+		    "assertion-control-specifier with a %<policy%> term");
+	  inform (looser->location,
+		  "parenthesize the rest of the assertion-control label");
+	  bad = true;
+	}
+      if (bad)
+	{
+	  cp_parser_skip_assertion_control_specifier (parser);
+	  return NULL_TREE;
+	}
+      if (!any)
 	return NULL_TREE;
 
       /* Record the terms, in source order, and take them out.  A `|' stays
@@ -36321,8 +36414,8 @@ cp_parser_function_contract_specifier (cp_parser *parser, bool defer)
 
   /* The `policy (group)' terms of the assertion-control-specifier, taken
      out of it before the rest is parsed.  Whether a group is active is
-     decided here, where the specifier is written, even when the predicate
-     is deferred.  */
+     decided here, where the specifier is written, even when the rest of the
+     label is deferred.  */
   tree policy_labels = cp_parser_contract_policy_terms (parser);
 
   /* P4451: `< terminating >' without P3400.  Its lookup checks run where a

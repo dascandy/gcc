@@ -3108,8 +3108,14 @@ apply_compute_semantic_split (tree contract,
   if (!compute_semantic_diagnosed)
     compute_semantic_diagnosed = hash_set<tree>::create_ggc (8);
   if (!compute_semantic_diagnosed->add (contract))
-    error_at (loc, "%<compute_semantic%> result is not in the "
-	      "allowed evaluation semantics");
+    {
+      auto_diagnostic_group d;
+      error_at (loc, "%<compute_semantic%> result is not in the "
+		"allowed evaluation semantics");
+      if (tree policy = contract_active_policy (contract))
+	inform (loc, "the allowed evaluation semantics are restricted by "
+		"active policy %qE", policy);
+    }
 }
 
 /* D4405: the runtime callee-side semantic slot holds the runtime semantic in
@@ -3174,8 +3180,12 @@ ensure_evaluation_semantic (tree contract, tree fndecl, bool in_ce)
   bool dynamic_no_default = (!in_ce && res.dyn_name && res.no_static_default);
   if (res.semantic == CES_INVALID && !dynamic_no_default)
     {
+      auto_diagnostic_group d;
       error_at (EXPR_LOCATION (contract),
 		"no valid evaluation semantic for contract assertion");
+      if (tree policy = contract_active_policy (contract))
+	inform (EXPR_LOCATION (contract), "the allowed evaluation semantics "
+		"are restricted by active policy %qE", policy);
       runtime = in_ce ? CES_OBSERVE : CES_ENFORCE;
       analysis = CES_IGNORE;
     }
@@ -9411,6 +9421,19 @@ resolve_contract_label (tree contract, tree label, location_t loc)
 	}
     }
 
+  /* An active `policy (group)' term allows only CES_POLICY_ACTIVE_MASK,
+     which the label's set has to meet.  Whether it does depends on where
+     the assertion is, so the label alone is not at fault.  */
+  if (tree policy = contract_active_policy (contract))
+    if (!(allowed_mask & CES_POLICY_ACTIVE_MASK))
+      {
+	error_at (loc, "assertion-control label allows none of the "
+		  "evaluation semantics that active policy %qE permits",
+		  policy);
+	CONTRACT_LABEL (contract) = NULL_TREE;
+	allowed_mask = CES_ALL_ALLOWED_WITH_EXTENSIONS;
+      }
+
   /* Store the label restriction; NULL_TREE means no restriction (the full
      set), so only store when the label narrowed it.  */
   if (allowed_mask != CES_ALL_ALLOWED_WITH_EXTENSIONS)
@@ -9483,6 +9506,7 @@ grok_contract (tree contract_spec, tree result, cp_expr condition,
 
   CONTRACT_LABEL (contract) = label;
   CONTRACT_REQUIRES_CLAUSE (contract) = requires_clause;
+  /* Before the label is resolved, which checks it against them.  */
   CONTRACT_POLICY_LABELS (contract) = policy_labels;
 
   /* Validate the label and compute its derived facets.  A label deferred
