@@ -10438,6 +10438,10 @@ build_over_call (struct z_candidate *cand, int flags, tsubst_flags_t complain)
   /* P3100: whether a virtual call was resolved statically below.  */
   bool p3100_devirtualized = false;
 
+  if (DECL_OVERLOADED_OPERATOR_P (fn))
+    policy_check_overloaded_operator (input_location, fn,
+				      /*definition_p=*/false, complain);
+
   /* In a template, there is no need to perform all of the work that
      is normally done.  We are only interested in the type of the call
      expression, i.e., the return type of the function.  Any semantic
