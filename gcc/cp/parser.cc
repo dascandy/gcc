@@ -35243,30 +35243,19 @@ cp_parser_assertion_control_expression (cp_parser *parser)
   return cp_parser_constant_expression (parser, NIC_NONE, NULL);
 }
 
-/* Token-cache the assertion-control-specifier whose `<' is the next token,
-   for a contract whose predicate is deferred: a function contract specifier
-   is a complete-class context ([class.mem]), and the function's parameters
-   are in scope in all of it, so the label is parsed with the predicate, by
-   cp_parser_late_contract_condition.  Returns a DEFERRED_PARSE holding the
-   tokens between the angle brackets, having consumed the specifier, or
-   NULL_TREE, having consumed nothing, if its end cannot be located; the
-   caller then parses it eagerly, which gives the diagnostics.
+/* Locate the end of the assertion-control-specifier whose `<' is the next
+   token: the first `>' outside any bracketed group that does not close a
+   `<' earlier in the label, a `<' being taken to open a
+   template-argument-list.  Return its position for cp_lexer_peek_nth_token,
+   setting *SPLIT if it is the second half of a `>>' that also closes a
+   template-argument-list in the label, or 0 if the end cannot be located.  */
 
-   The end is the first `>' outside any bracketed group that does not close a
-   `<' earlier in the label: as in cp_parser_cache_defarg, a `<' is taken to
-   open a template-argument-list.  A label using `<' as the less-than
-   operator outside parentheses, which is not a class-type object, is then
-   rejected with a different diagnostic.  When a `>>' closes both a
-   template-argument-list in the label and the specifier, the cache keeps it,
-   and the replay takes its second half as the end.  */
-
-static tree
-cp_parser_cache_assertion_control_specifier (cp_parser *parser)
+static size_t
+cp_assertion_control_end (cp_parser *parser, bool *split)
 {
   unsigned nest = 0;
   unsigned angle = 0;
   size_t end = 0;
-  bool split = false;
   for (size_t n = 2; !end; ++n)
     {
       cp_token *tok = cp_lexer_peek_nth_token (parser->lexer, n);
@@ -35274,10 +35263,10 @@ cp_parser_cache_assertion_control_specifier (cp_parser *parser)
 	{
 	case CPP_EOF:
 	case CPP_PRAGMA_EOL:
-	  return NULL_TREE;
+	  return 0;
 	case CPP_SEMICOLON:
 	  if (!nest)
-	    return NULL_TREE;
+	    return 0;
 	  break;
 	case CPP_OPEN_PAREN:
 	case CPP_OPEN_SQUARE:
@@ -35288,7 +35277,7 @@ cp_parser_cache_assertion_control_specifier (cp_parser *parser)
 	case CPP_CLOSE_SQUARE:
 	case CPP_CLOSE_BRACE:
 	  if (!nest)
-	    return NULL_TREE;
+	    return 0;
 	  --nest;
 	  break;
 	case CPP_LESS:
@@ -35309,11 +35298,11 @@ cp_parser_cache_assertion_control_specifier (cp_parser *parser)
 	  if (!angle)
 	    /* A `>>' whose first half ends the specifier: leave the
 	       diagnostic to the eager parse.  */
-	    return NULL_TREE;
+	    return 0;
 	  if (angle == 1)
 	    {
 	      end = n;
-	      split = true;
+	      *split = true;
 	    }
 	  else
 	    angle -= 2;
@@ -35322,6 +35311,34 @@ cp_parser_cache_assertion_control_specifier (cp_parser *parser)
 	  break;
 	}
     }
+
+  return end;
+}
+
+/* Token-cache the assertion-control-specifier whose `<' is the next token,
+   for a contract whose predicate is deferred: a function contract specifier
+   is a complete-class context ([class.mem]), and the function's parameters
+   are in scope in all of it, so the label is parsed with the predicate, by
+   cp_parser_late_contract_condition.  Returns a DEFERRED_PARSE holding the
+   tokens between the angle brackets, having consumed the specifier, or
+   NULL_TREE, having consumed nothing, if its end cannot be located; the
+   caller then parses it eagerly, which gives the diagnostics.
+
+   The end is the first `>' outside any bracketed group that does not close a
+   `<' earlier in the label: as in cp_parser_cache_defarg, a `<' is taken to
+   open a template-argument-list.  A label using `<' as the less-than
+   operator outside parentheses, which is not a class-type object, is then
+   rejected with a different diagnostic.  When a `>>' closes both a
+   template-argument-list in the label and the specifier, the cache keeps it,
+   and the replay takes its second half as the end.  */
+
+static tree
+cp_parser_cache_assertion_control_specifier (cp_parser *parser)
+{
+  bool split = false;
+  size_t end = cp_assertion_control_end (parser, &split);
+  if (!end)
+    return NULL_TREE;
 
   /* Consume the `<', then the label, then the closing token.  */
   cp_lexer_consume_token (parser->lexer);
