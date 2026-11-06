@@ -3006,22 +3006,31 @@ static const char *const policy_c_library_functions[] = {
   /* Files.  */
   "fopen", "freopen", "remove", "rename", "fopen_s", "freopen_s",
   /* Narrow strings.  */
-  "strcpy", "strncpy", "strncat", "strndup", "strcasecmp", "_stricmp",
-  "strncasecmp", "_strnicmp", "strchr", "strstr", "strncpy_s", "strncat_s",
+  "strcpy", "strncpy", "strcat", "strncat", "strdup", "strndup", "strcmp",
+  "strncmp", "strcasecmp", "_stricmp", "strncasecmp", "_strnicmp", "strchr",
+  "strrchr", "strstr", "strspn", "strcspn", "strpbrk", "strtok", "strtok_r",
+  "strsep", "strlcpy", "strlcat", "stpcpy", "stpncpy", "strchrnul",
+  "strcasestr", "index", "rindex", "_strdup", "strcpy_s", "strncpy_s",
+  "strcat_s", "strncat_s", "strtok_s",
   /* Narrow characters.  */
   "isalpha", "isalnum", "isupper", "islower", "isprint", "isgraph", "ispunct",
   "toupper", "tolower",
   /* Narrow input.  */
   "fgets", "gets_s",
   /* Narrow output.  */
-  "printf", "vprintf", "fprintf", "vfprintf", "snprintf", "vsnprintf", "puts",
-  "fputs", "putchar", "putc", "fputc", "printf_s", "vprintf_s", "fprintf_s",
-  "vfprintf_s", "snprintf_s", "vsnprintf_s",
+  "printf", "vprintf", "fprintf", "vfprintf", "sprintf", "vsprintf",
+  "snprintf", "vsnprintf", "puts", "fputs", "putchar", "putc", "fputc",
+  "printf_s", "vprintf_s", "fprintf_s", "vfprintf_s", "sprintf_s",
+  "vsprintf_s", "snprintf_s", "vsnprintf_s",
   /* Wide input and output.  */
   "wprintf", "fwprintf", "vwprintf", "vfwprintf", "wscanf", "fwscanf",
   "vwscanf", "vfwscanf", "fputws", "fputwc", "putwc", "putwchar", "fgetws",
   "fgetwc", "getwc", "getwchar", "wprintf_s", "fwprintf_s", "vwprintf_s",
   "vfwprintf_s", "wscanf_s", "fwscanf_s", "vwscanf_s", "vfwscanf_s",
+  /* Wide strings.  */
+  "wcscpy", "wcsncpy", "wcscat", "wcsncat", "wcscmp", "wcsncmp", "wcschr",
+  "wcsrchr", "wcsstr", "wcsspn", "wcscspn", "wcspbrk", "wcstok", "wcscpy_s",
+  "wcsncpy_s", "wcscat_s", "wcsncat_s", "wcstok_s",
 };
 
 /* The identifiers of policy_c_library_functions.  */
@@ -14307,6 +14316,24 @@ static const char *const policy_unicode_members[] = {
   NULL
 };
 
+/* The members of predefined policy c_string: the C string functions that
+   std::string, std::string_view, std::format and their wide forms replace,
+   and those that compare C strings with ASCII case folding.  */
+
+static const char *const policy_c_string_members[] = {
+  "strcpy", "strncpy", "strcat", "strncat", "strdup", "strndup", "strcmp",
+  "strncmp", "strcasecmp", "_stricmp", "strncasecmp", "_strnicmp", "strchr",
+  "strrchr", "strstr", "strspn", "strcspn", "strpbrk", "strtok", "strtok_r",
+  "strsep", "strlcpy", "strlcat", "stpcpy", "stpncpy", "strchrnul",
+  "strcasestr", "index", "rindex", "_strdup", "strcpy_s", "strncpy_s",
+  "strcat_s", "strncat_s", "strtok_s", "sprintf", "vsprintf", "sprintf_s",
+  "vsprintf_s",
+  "wcscpy", "wcsncpy", "wcscat", "wcsncat", "wcscmp", "wcsncmp", "wcschr",
+  "wcsrchr", "wcsstr", "wcsspn", "wcscspn", "wcspbrk", "wcstok", "wcscpy_s",
+  "wcsncpy_s", "wcscat_s", "wcsncat_s", "wcstok_s",
+  NULL
+};
+
 /* The members of predefined policy inefficient: what does more work than
    is usually wanted.  */
 
@@ -14328,6 +14355,7 @@ static const struct
   const char *const *members;
 } policy_predefined_definitions[] = {
   { "unicode", policy_unicode_members },
+  { "c_string", policy_c_string_members },
   { "inefficient", policy_inefficient_members },
 };
 
