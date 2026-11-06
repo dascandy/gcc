@@ -8663,6 +8663,7 @@ extern void policy_set_template_state		(tree, tree);
 extern bool policy_check_use			(location_t, tree,
 						 tsubst_flags_t);
 extern void policy_check_pending_uses		(tree);
+extern bool policy_in_alias_substitution_p	(void);
 extern void push_policy_deferral		(void);
 extern tree pop_policy_deferral			(void);
 extern void policy_defer_uses			(tree, tree);

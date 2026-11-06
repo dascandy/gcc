@@ -27,6 +27,9 @@ template <typename T> struct [[policy::remove(core)]] S2<T *> {};
 [[policy::remove(core)]] extern int v2 = 1;	// { dg-warning "initialized and declared" }
 template <typename T> [[policy::remove(core)]] T v3 = T ();
 [[using policy: remove(core)]] int v4;
+[[policy::remove(core)]] typedef int T1;
+using T2 [[policy::remove(core)]] = int;
+template <typename T> using T3 [[policy::remove(core)]] = T;
 
 void
 g ()
@@ -43,8 +46,6 @@ struct S3 {
 };
 struct [[policy::remove(core)]] F;			// { dg-warning "only applies to" }
 void p ([[policy::remove(core)]] int);		// { dg-warning "only applies to" }
-[[policy::remove(core)]] typedef int T1;		// { dg-warning "only applies to" }
-using T2 [[policy::remove(core)]] = int;		// { dg-warning "only applies to" }
 enum [[policy::remove(core)]] E { e };		// { dg-warning "only applies to" }
 int [[policy::remove(core)]] t;			// { dg-warning "attribute ignored" }
 
