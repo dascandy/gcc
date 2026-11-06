@@ -8659,6 +8659,7 @@ extern bool policy_known_p			(tree);
 extern void policy_add_known			(tree);
 extern void policy_note_unknown			(tree, bool, location_t);
 extern void policy_add_removal			(tree);
+extern tree policy_add_c_library_removal	(tree, tree);
 extern bool policy_defined_p			(tree);
 extern void policy_define			(location_t, tree, tree);
 extern bool policy_redundant_p			(tree, bool, location_t);

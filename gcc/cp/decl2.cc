@@ -2153,6 +2153,9 @@ cplus_decl_attributes (tree *decl, tree attributes, int flags)
 	}
     }
 
+  /* Add the policy::remove attribute of a C library function.  */
+  attributes = policy_add_c_library_removal (*decl, attributes);
+
   tree late_attrs = NULL_TREE;
   if (processing_template_decl)
     {

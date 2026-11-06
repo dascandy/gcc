@@ -13,6 +13,6 @@ f ()
 {
   [[policy::activate(mine)]];
   std::cout << std::endl;	// { dg-error "'std::cout' was policy-removed" }
-				// { dg-error "endl.*was policy-removed" "" { target *-*-* } .-1 }
-  std::clog << "x";
+				// { dg-error "std::endl\\(\[^'\]*' was policy-removed" "" { target *-*-* } .-1 }
+  std::clog << "x";		// { dg-error "'std::clog' was policy-removed" }
 }
