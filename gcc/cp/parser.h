@@ -59,7 +59,10 @@ struct GTY (()) cp_token {
   bool purged_p : 1;
   bool tree_check_p : 1;
   bool main_source_p : 1;
-  /* 3 unused bits.  */
+  /* True if this token directly follows a macro expansion that expanded
+     to nothing.  */
+  bool after_empty_expansion_p : 1;
+  /* 2 unused bits.  */
 
   /* The location at which this token was found.  */
   location_t location;
@@ -362,6 +365,16 @@ struct GTY(()) cp_parser {
      The difference relates to giving the right sets of error messages:
      "case not in switch" vs "break statement used with OpenMP...".  */
   bool in_switch_statement_p;
+
+  /* Whether the next statement, or the statements of the next
+     compound-statement, is the body of a switch statement or a direct
+     child of its compound-statement body, the only place where its case
+     labels are allowed in policy no_mixed_switch.  */
+  enum {
+    scs_none,
+    scs_body,
+    scs_child
+  } policy_switch_context;
 
   /* TRUE if we are parsing a type-id in an expression context.  In
      such a situation, both "type (expr)" and "type (type)" are valid

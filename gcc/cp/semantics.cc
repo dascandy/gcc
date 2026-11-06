@@ -13818,7 +13818,10 @@ void
 init_cp_semantics (void)
 {
   /* The predefined policies.  */
+  policy_add_known (get_identifier ("no_empty_statement"));
   policy_add_known (get_identifier ("throw_non_std_exception"));
+  policy_add_known (get_identifier ("no_goto"));
+  policy_add_known (get_identifier ("no_mixed_switch"));
 }
 
 
