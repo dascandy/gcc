@@ -3023,6 +3023,28 @@ policy_defined_p (tree group)
   return policy_expansion (group) != NULL_TREE;
 }
 
+/* Define policy NAME to expand to the policies in the TREE_LIST MEMBERS, and
+   the policies they expand to.  A policy that is included through more than
+   one member is included once.  */
+
+static void
+policy_add_definition (tree name, tree members)
+{
+  tree expansion = NULL_TREE;
+  hash_set<tree> seen;
+  for (tree m = members; m; m = TREE_CHAIN (m))
+    {
+      tree groups = policy_expansion (TREE_VALUE (m));
+      if (!groups)
+	groups = build_tree_list (NULL_TREE, TREE_VALUE (m));
+      for (tree g = groups; g; g = TREE_CHAIN (g))
+	if (!seen.add (TREE_VALUE (g)))
+	  expansion = tree_cons (NULL_TREE, TREE_VALUE (g), expansion);
+    }
+  hash_map_safe_put<hm_ggc> (policy_definitions, name, nreverse (expansion));
+  policy_add_known (name);
+}
+
 /* Define policy NAME at LOC to expand to the policies in the TREE_LIST
    MEMBERS, and the policies they expand to.  Give an error and do nothing if
    NAME is already known, or a member is unknown or listed more than once.
@@ -3052,19 +3074,7 @@ policy_define (location_t loc, tree name, tree members)
 	  return;
 	}
     }
-  tree expansion = NULL_TREE;
-  hash_set<tree> seen;
-  for (tree m = members; m; m = TREE_CHAIN (m))
-    {
-      tree groups = policy_expansion (TREE_VALUE (m));
-      if (!groups)
-	groups = build_tree_list (NULL_TREE, TREE_VALUE (m));
-      for (tree g = groups; g; g = TREE_CHAIN (g))
-	if (!seen.add (TREE_VALUE (g)))
-	  expansion = tree_cons (NULL_TREE, TREE_VALUE (g), expansion);
-    }
-  hash_map_safe_put<hm_ggc> (policy_definitions, name, nreverse (expansion));
-  policy_add_known (name);
+  policy_add_definition (name, members);
 }
 
 /* Return true if LOC1 and LOC2 are in the same source file.  */
@@ -14194,6 +14204,20 @@ build_transaction_expr (location_t loc, tree expr, int flags, tree noex)
   return ret;
 }
 
+/* The predefined policies that are defined as by policy::define, each with
+   the policies it expands to, followed by NULLs.  Unlike with policy::define,
+   the members need not be known: they can be policies that the library
+   removes under, which become known when its headers are included.  */
+
+static const struct
+{
+  const char *name;
+  const char *members[4];
+} policy_predefined_definitions[] = {
+  { "unicode", { "cout", "cerr", "basic_regex", NULL } },
+  { "inefficient", { "endl", NULL } },
+};
+
 void
 init_cp_semantics (void)
 {
@@ -14215,6 +14239,14 @@ init_cp_semantics (void)
   policy_add_known (get_identifier ("reinterpret_cast"));
   policy_add_known (get_identifier ("const_cast"));
   policy_add_known (get_identifier ("dynamic_cast"));
+  for (const auto &def : policy_predefined_definitions)
+    {
+      tree members = NULL_TREE;
+      for (const char *member : def.members)
+	if (member)
+	  members = tree_cons (NULL_TREE, get_identifier (member), members);
+      policy_add_definition (get_identifier (def.name), nreverse (members));
+    }
 }
 
 
