@@ -8646,9 +8646,12 @@ extern void finish_compound_stmt		(tree);
 extern GTY(()) tree current_policy_state;
 extern bool policy_active_p			(tree);
 extern bool policy_active_at_p			(tree, location_t);
+extern bool policy_removed_p			(tree);
+extern void policy_removed_error		(location_t, tree, tree);
 extern void policy_set_active			(tree, bool);
 extern bool policy_known_p			(tree);
 extern void policy_add_known			(tree);
+extern void policy_add_removal			(tree);
 extern bool policy_defined_p			(tree);
 extern void policy_define			(location_t, tree, tree);
 extern bool policy_unchanged_p			(tree, bool);
@@ -8657,6 +8660,27 @@ extern void pop_policy_state			(void);
 extern void policy_capture_for_template		(tree);
 extern tree policy_template_state		(tree);
 extern void policy_set_template_state		(tree, tree);
+extern bool policy_check_use			(location_t, tree,
+						 tsubst_flags_t);
+extern void policy_check_pending_uses		(tree);
+extern void push_policy_deferral		(void);
+extern tree pop_policy_deferral			(void);
+extern void policy_defer_uses			(tree, tree);
+
+/* While alive, records the uses of entities that can be policy-removed
+   whose diagnostics were suppressed by COMPLAIN, for the specialization
+   being formed; see policy_check_use.  */
+
+class policy_deferral_sentinel
+{
+public:
+  policy_deferral_sentinel () { push_policy_deferral (); }
+  ~policy_deferral_sentinel () { if (!done) pop_policy_deferral (); }
+  /* Stop recording, and return the recorded uses.  */
+  tree finish () { done = true; return pop_policy_deferral (); }
+private:
+  bool done = false;
+};
 extern tree finish_asm_string_expression	(location_t, tree);
 extern tree finish_asm_stmt			(location_t, int, tree, tree,
 						 tree, tree, tree, bool, bool);
@@ -8973,6 +8997,7 @@ extern bool is_byte_access_type_not_plain_char	(tree);
 extern const struct scoped_attribute_specs cxx_gnu_attribute_table;
 extern const struct scoped_attribute_specs cxx_clang_attribute_table;
 extern const struct scoped_attribute_specs cxx_policy_attribute_table;
+extern void warn_misplaced_policy_remove	(tree);
 extern const struct scoped_attribute_specs std_attribute_table;
 extern const struct scoped_attribute_specs internal_attribute_table;
 extern tree make_ptrmem_cst			(tree, tree);

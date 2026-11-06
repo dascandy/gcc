@@ -13533,6 +13533,10 @@ instantiate_class_template (tree type)
 				  args, tf_error, NULL_TREE);
   fixup_attribute_variants (type);
 
+  /* Now that the pattern is known, diagnose the uses of TYPE that were made
+     before it was.  */
+  policy_check_pending_uses (type);
+
   /* Now that our base classes are set up, enter the scope of the
      class, so that name lookups into base classes, etc. will work
      correctly.  This is precisely analogous to what we do in
@@ -17825,6 +17829,7 @@ tsubst (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 
 	  tree r = lookup_template_class (t, argvec, in_decl, NULL_TREE,
 					  complain);
+	  policy_check_use (input_location, r, complain);
 	  return cp_build_qualified_type (r, cp_type_quals (t), complain);
 	}
       else
@@ -24581,6 +24586,10 @@ instantiate_template (tree tmpl, tree orig_args, tsubst_flags_t complain)
 
   tree pattern = DECL_TEMPLATE_RESULT (gen_tmpl);
 
+  /* Record the uses of policy-removed entities that COMPLAIN does not let
+     us diagnose, to diagnose them if this specialization is chosen.  */
+  policy_deferral_sentinel sds;
+
   tree partial_ti = NULL_TREE;
   fndecl = NULL_TREE;
   if (VAR_P (pattern))
@@ -24611,6 +24620,7 @@ instantiate_template (tree tmpl, tree orig_args, tsubst_flags_t complain)
 
   if (fndecl == error_mark_node)
     return error_mark_node;
+  policy_defer_uses (fndecl, sds.finish ());
 
   /* Substituting the type might have recursively instantiated this
      same alias (c++/117530).  */
@@ -24871,6 +24881,9 @@ fn_type_unification (tree fn,
   tsubst_flags_t complain = (explain_p ? tf_warning_or_error : tf_none);
   bool ok;
   static int deduction_depth;
+  /* Record the uses of policy-removed entities in the deduction, to diagnose
+     them if the deduced specialization is chosen.  */
+  policy_deferral_sentinel sds;
   /* type_unification_real will pass back any access checks from default
      template argument substitution.  */
   vec<deferred_access_check, va_gc> *checks = NULL;
@@ -25119,8 +25132,15 @@ fn_type_unification (tree fn,
 					  /*noninst_only_p=*/true))
     goto fail;
 
-  /* CWG2369: Check satisfaction before non-deducible conversions.  */
-  if (!constraints_satisfied_p (fn, targs))
+  /* CWG2369: Check satisfaction before non-deducible conversions.  Uses of
+     policy-removed entities in the constraints are never diagnosed: they
+     only ask whether something is valid.  */
+  bool satisfied;
+  {
+    policy_deferral_sentinel cds;
+    satisfied = constraints_satisfied_p (fn, targs);
+  }
+  if (!satisfied)
     {
       if (explain_p)
 	diagnose_constraints (DECL_SOURCE_LOCATION (fn), fn, targs);
@@ -25209,6 +25229,7 @@ fn_type_unification (tree fn,
   if (orig_fn != fn)
     decl = instantiate_template (orig_fn, targs, complain);
 
+  policy_defer_uses (decl, sds.finish ());
   r = decl;
 
  fail:
@@ -28727,6 +28748,7 @@ most_specialized_partial_spec (tree target, tsubst_flags_t complain,
   processing_template_decl_sentinel ptds;
 
   tree list = NULL_TREE;
+  tree policy_uses = NULL_TREE;
   for (tree t = specs; t; t = TREE_CHAIN (t))
     {
       const tree ospec_tmpl = TREE_VALUE (t);
@@ -28744,15 +28766,29 @@ most_specialized_partial_spec (tree target, tsubst_flags_t complain,
       else
 	spec_tmpl = ospec_tmpl;
 
+      /* Record the uses of policy-removed entities in matching each
+	 candidate, to diagnose those of the one that is chosen if it is
+	 used.  */
+      policy_deferral_sentinel sds;
       tree spec_args = get_partial_spec_bindings (tmpl, spec_tmpl, args);
       if (spec_args)
 	{
 	  if (outer_args)
 	    spec_args = add_to_template_args (outer_args, spec_args);
 
-	  /* Keep the candidate only if its constraints are satisfied.  */
-	  if (constraints_satisfied_p (ospec_tmpl, spec_args))
-	    list = tree_cons (spec_args, ospec_tmpl, list);
+	  /* Keep the candidate only if its constraints are satisfied.  Uses
+	     of policy-removed entities in them are never diagnosed.  */
+	  bool satisfied;
+	  {
+	    policy_deferral_sentinel cds;
+	    satisfied = constraints_satisfied_p (ospec_tmpl, spec_args);
+	  }
+	  if (satisfied)
+	    {
+	      list = tree_cons (spec_args, ospec_tmpl, list);
+	      policy_uses = tree_cons (ospec_tmpl, sds.finish (),
+				       policy_uses);
+	    }
 	}
     }
 
@@ -28816,6 +28852,10 @@ most_specialized_partial_spec (tree target, tsubst_flags_t complain,
     }
 
   tree result = build_template_info (TREE_VALUE (champ), TREE_PURPOSE (champ));
+  if (!rechecking)
+    policy_defer_uses (TYPE_P (target) ? target : NULL_TREE,
+		       TREE_VALUE (purpose_member (TREE_VALUE (champ),
+						   policy_uses)));
   if (!rechecking && tinfo)
     TI_PARTIAL_INFO (tinfo) = result;
   return result;

@@ -24245,7 +24245,16 @@ cp_parser_elaborated_type_specifier (cp_parser* parser,
 		    "declaration that is not a definition is ignored");
 	}
       else if (is_declaration && cp_parser_declares_only_class_p (parser))
-	cplus_decl_attributes (&type, attributes, (int) ATTR_FLAG_TYPE_IN_PLACE);
+	{
+	  /* policy::remove only applies to class definitions.  */
+	  if (tree remove = lookup_attribute ("policy", "remove", attributes))
+	    {
+	      warn_misplaced_policy_remove (get_attribute_name (remove));
+	      attributes = remove_attribute ("policy", "remove", attributes);
+	    }
+	  cplus_decl_attributes (&type, attributes,
+				 (int) ATTR_FLAG_TYPE_IN_PLACE);
+	}
       else
 	warning (OPT_Wattributes,
 		 "attributes ignored on elaborated-type-specifier that is "
@@ -34188,7 +34197,8 @@ cp_parser_std_attribute (cp_parser *parser, tree attr_ns)
       attr_flag = id_attr;
     else if (attr_ns
 	     && is_attribute_p ("policy", attr_ns)
-	     && (is_attribute_p ("activate", attr_id)
+	     && (is_attribute_p ("remove", attr_id)
+		 || is_attribute_p ("activate", attr_id)
 		 || is_attribute_p ("suppress", attr_id)))
       /* The policy group is an identifier.  */
       attr_flag = id_attr;
