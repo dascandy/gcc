@@ -2254,6 +2254,13 @@ tree current_policy_state;
 
 static GTY(()) vec<tree, va_gc> *policy_state_stack;
 
+/* The active set of policies at the definition of each template defined
+   while any policy was active, keyed by its TEMPLATE_DECL, and at each
+   default member initializer of a class template, keyed by its
+   FIELD_DECL.  */
+
+static GTY(()) hash_map<tree, tree> *policy_template_states;
+
 /* Return true if policy GROUP is in the active set.
 
    Activating a policy may only make well-formed code ill-formed; it must
@@ -2354,6 +2361,45 @@ check_policy_state_balance (void)
   if (seen_error ())
     return;
   gcc_checking_assert (vec_safe_is_empty (policy_state_stack));
+}
+
+/* T is a declaration or class type being defined.  If it is the pattern
+   of a template, record the active set of policies for the template.  */
+
+void
+policy_capture_for_template (tree t)
+{
+  if (!processing_template_decl)
+    return;
+  tree ti = get_template_info (t);
+  if (!ti || TREE_CODE (TI_TEMPLATE (ti)) != TEMPLATE_DECL)
+    return;
+  tree tmpl = TI_TEMPLATE (ti);
+  if (DECL_TEMPLATE_RESULT (tmpl) != (TYPE_P (t) ? TYPE_MAIN_DECL (t) : t))
+    return;
+  policy_set_template_state (tmpl, current_policy_state);
+}
+
+/* Record STATE as the active set of policies at the definition of KEY, a
+   template or the pattern of a default member initializer.  */
+
+void
+policy_set_template_state (tree key, tree state)
+{
+  if (state)
+    hash_map_safe_put<hm_ggc> (policy_template_states, key, state);
+  else if (policy_template_states)
+    policy_template_states->remove (key);
+}
+
+/* Return the active set of policies at the definition of TMPL, a template
+   or the pattern of a default member initializer.  */
+
+tree
+policy_template_state (tree tmpl)
+{
+  tree *slot = hash_map_safe_get (policy_template_states, tmpl);
+  return slot ? *slot : NULL_TREE;
 }
 
 /* Finish an asm string literal, which can be a string literal
@@ -4351,6 +4397,8 @@ begin_class_definition (tree t)
       error ("definition of %q#T inside template parameter list", t);
       return error_mark_node;
     }
+
+  policy_capture_for_template (t);
 
   /* According to the C++ ABI, decimal classes defined in ISO/IEC TR 24733
      are passed the same as decimal scalar types.  */

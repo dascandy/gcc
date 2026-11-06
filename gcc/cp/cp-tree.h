@@ -6010,6 +6010,11 @@ decl_template_parm_check (const_tree t, const char *f, int l, const char *fn)
 
 #define USING_STMT_NAMESPACE(NODE) TREE_OPERAND (USING_STMT_CHECK (NODE), 0)
 
+/* The policy group of a POLICY_STMT, and boolean_true_node if it activates
+   the group or boolean_false_node if it suppresses it.  */
+#define POLICY_STMT_GROUP(NODE) TREE_OPERAND (POLICY_STMT_CHECK (NODE), 0)
+#define POLICY_STMT_ACTIVE(NODE) TREE_OPERAND (POLICY_STMT_CHECK (NODE), 1)
+
 /* Nonzero if this try block is a function try block.  */
 #define FN_TRY_BLOCK_P(NODE)	TREE_LANG_FLAG_3 (TRY_BLOCK_CHECK (NODE))
 #define HANDLER_PARMS(NODE)	TREE_OPERAND (HANDLER_CHECK (NODE), 0)
@@ -8647,6 +8652,9 @@ extern void policy_add_known			(tree);
 extern bool policy_unchanged_p			(tree, bool);
 extern void push_policy_state			(void);
 extern void pop_policy_state			(void);
+extern void policy_capture_for_template		(tree);
+extern tree policy_template_state		(tree);
+extern void policy_set_template_state		(tree, tree);
 extern tree finish_asm_string_expression	(location_t, tree);
 extern tree finish_asm_stmt			(location_t, int, tree, tree,
 						 tree, tree, tree, bool, bool);

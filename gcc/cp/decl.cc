@@ -9702,6 +9702,10 @@ cp_finish_decl (tree decl, tree init, bool init_const_expr_p,
   if (type == error_mark_node)
     return;
 
+  /* Record the active policies for the definition of a templated variable.  */
+  if (VAR_P (decl) && !DECL_EXTERNAL (decl))
+    policy_capture_for_template (decl);
+
   if (VAR_P (decl) && is_copy_initialization (init))
     flags |= LOOKUP_ONLYCONVERTING;
 
@@ -20602,6 +20606,8 @@ start_preparsed_function (tree decl1, tree attrs, int flags)
 
   if (!DECL_OMP_DECLARE_REDUCTION_P (decl1))
     start_lambda_scope (decl1);
+
+  policy_capture_for_template (decl1);
 
   return true;
 }

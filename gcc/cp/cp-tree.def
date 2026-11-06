@@ -210,6 +210,11 @@ DEFTREECODE (USING_DECL, "using_decl", tcc_declaration, 0)
 /* A using directive. The operand is USING_STMT_NAMESPACE.  */
 DEFTREECODE (USING_STMT, "using_stmt", tcc_statement, 1)
 
+/* A [[policy::activate]] or [[policy::suppress]] statement in a template,
+   replayed at instantiation.  Operand 0 is POLICY_STMT_GROUP, operand 1 is
+   POLICY_STMT_ACTIVE.  */
+DEFTREECODE (POLICY_STMT, "policy_stmt", tcc_statement, 2)
+
 /* An un-parsed operand.  Holds a vector of input tokens and
    a vector of places where the argument was instantiated before
    parsing had occurred.  This is used for default arguments, delayed
