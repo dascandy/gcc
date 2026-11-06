@@ -5146,7 +5146,9 @@ This warning is enabled by @option{-Wall}.
 Warn when a @code{[[policy::activate(@var{group})]]} attribute activates a
 policy group that is already active, or a
 @code{[[policy::suppress(@var{group})]]} attribute suppresses a policy group
-that is not active.  For example:
+that is not active.  For a group defined by @code{[[policy::define]]}, warn
+only when every policy group it expands to is already in the requested
+state.  For example:
 
 @smallexample
 [[policy::activate(no_empty_statement)]];

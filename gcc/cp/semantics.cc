@@ -2314,20 +2314,103 @@ policy_add_known (tree group)
   known_policies->add (group);
 }
 
+/* The policy groups defined by policy::define, each mapped to a TREE_LIST
+   of the groups it expands to, none of which is itself defined.  */
+
+static GTY(()) hash_map<tree, tree> *policy_definitions;
+
+/* Return the TREE_LIST of groups that policy GROUP expands to, or NULL_TREE
+   if GROUP is not defined by policy::define.  */
+
+static tree
+policy_expansion (tree group)
+{
+  if (!policy_definitions)
+    return NULL_TREE;
+  tree *slot = policy_definitions->get (group);
+  return slot ? *slot : NULL_TREE;
+}
+
+/* Return true if policy GROUP is defined by policy::define.  */
+
+bool
+policy_defined_p (tree group)
+{
+  return policy_expansion (group) != NULL_TREE;
+}
+
+/* Define policy NAME at LOC to expand to the policies in the TREE_LIST
+   MEMBERS, and the policies they expand to.  Give an error and do nothing if
+   NAME is already known, or a member is unknown or listed more than once.
+   A policy that is included through more than one member is included
+   once.  */
+
+void
+policy_define (location_t loc, tree name, tree members)
+{
+  if (policy_known_p (name))
+    {
+      error_at (loc, "policy %qE is already known", name);
+      return;
+    }
+  for (tree m = members; m; m = TREE_CHAIN (m))
+    {
+      tree member = TREE_VALUE (m);
+      if (!policy_known_p (member))
+	{
+	  error_at (loc, "unknown policy %qE", member);
+	  return;
+	}
+      if (value_member (member, TREE_CHAIN (m)))
+	{
+	  error_at (loc, "policy %qE is listed more than once in the "
+		    "definition of %qE", member, name);
+	  return;
+	}
+    }
+  tree expansion = NULL_TREE;
+  hash_set<tree> seen;
+  for (tree m = members; m; m = TREE_CHAIN (m))
+    {
+      tree groups = policy_expansion (TREE_VALUE (m));
+      if (!groups)
+	groups = build_tree_list (NULL_TREE, TREE_VALUE (m));
+      for (tree g = groups; g; g = TREE_CHAIN (g))
+	if (!seen.add (TREE_VALUE (g)))
+	  expansion = tree_cons (NULL_TREE, TREE_VALUE (g), expansion);
+    }
+  hash_map_safe_put<hm_ggc> (policy_definitions, name, nreverse (expansion));
+  policy_add_known (name);
+}
+
 /* Return true if setting policy GROUP active if ACTIVE, else suppressing
    it, would not change the active set.  */
 
 bool
 policy_unchanged_p (tree group, bool active)
 {
-  return policy_active_p (group) == active;
+  tree expansion = policy_expansion (group);
+  if (!expansion)
+    return policy_active_p (group) == active;
+  for (tree g = expansion; g; g = TREE_CHAIN (g))
+    if (policy_active_p (TREE_VALUE (g)) != active)
+      return false;
+  return true;
 }
 
-/* Add policy GROUP to the active set if ACTIVE, else remove it.  */
+/* Add policy GROUP, or the policies it expands to, to the active set if
+   ACTIVE, else remove them.  */
 
 void
 policy_set_active (tree group, bool active)
 {
+  tree expansion = policy_expansion (group);
+  if (expansion)
+    {
+      for (tree g = expansion; g; g = TREE_CHAIN (g))
+	policy_set_active (TREE_VALUE (g), active);
+      return;
+    }
   if (policy_active_p (group) != active)
     current_policy_state
       = tree_cons (group, active ? boolean_true_node : boolean_false_node,

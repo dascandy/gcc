@@ -8649,6 +8649,8 @@ extern bool policy_active_at_p			(tree, location_t);
 extern void policy_set_active			(tree, bool);
 extern bool policy_known_p			(tree);
 extern void policy_add_known			(tree);
+extern bool policy_defined_p			(tree);
+extern void policy_define			(location_t, tree, tree);
 extern bool policy_unchanged_p			(tree, bool);
 extern void push_policy_state			(void);
 extern void pop_policy_state			(void);

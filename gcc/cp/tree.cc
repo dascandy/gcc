@@ -5769,6 +5769,18 @@ handle_policy_activate_attribute (tree *, tree name, tree, int,
   return NULL_TREE;
 }
 
+/* Handle a "policy::define" attribute that does not appear on its own;
+   arguments as in struct attribute_spec.handler.  */
+static tree
+handle_policy_define_attribute (tree *, tree name, tree, int,
+				bool *no_add_attrs)
+{
+  warning (OPT_Wattributes, "%<policy::%E%> attribute must appear as a "
+	   "separate declaration at namespace scope", name);
+  *no_add_attrs = true;
+  return NULL_TREE;
+}
+
 /* Table of C++ attributes in the policy:: namespace.  */
 // clang-format off
 static const attribute_spec cxx_policy_attributes[] =
@@ -5779,6 +5791,8 @@ static const attribute_spec cxx_policy_attributes[] =
     handle_policy_activate_attribute, NULL },
   { "suppress", 1, 1, false, false, false, false,
     handle_policy_activate_attribute, NULL },
+  { "define", 2, -1, false, false, false, false,
+    handle_policy_define_attribute, NULL },
 };
 
 const scoped_attribute_specs cxx_policy_attribute_table =
