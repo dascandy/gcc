@@ -10917,6 +10917,8 @@ build_over_call (struct z_candidate *cand, int flags, tsubst_flags_t complain)
 
   /* Ellipsis */
   int magic = magic_varargs_p (fn);
+  if (arg_index < vec_safe_length (args))
+    policy_check_variadic_call (fn, (*args)[arg_index], complain);
   for (; arg_index < vec_safe_length (args); ++arg_index)
     {
       tree a = (*args)[arg_index];

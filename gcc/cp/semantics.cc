@@ -2463,6 +2463,41 @@ policy_check_builtin_operator (location_t loc, enum tree_code code,
   policy_check_bool_operand (loc, code, op0, op1, assign_p);
 }
 
+/* Give an error if COMPLAIN allows it, policy variadic_functions is active
+   and ARG is the first argument that a call passes to the ellipsis of a
+   function declared with one, FNDECL or NULL_TREE for a call through a
+   pointer.  Declaring and defining such functions is allowed, and so is a
+   call in an unevaluated operand, such as to the lowest ranked overload of
+   a trait in sizeof or decltype.  Builtins that are not declared in the
+   program, such as __builtin_va_start, are not checked.  This is only
+   checked outside of templates, so that each call is checked once, when it
+   is instantiated.  */
+
+void
+policy_check_variadic_call (tree fndecl, tree arg, tsubst_flags_t complain)
+{
+  if (!(complain & tf_error)
+      || processing_template_decl
+      || cp_unevaluated_operand
+      || (fndecl && DECL_IS_UNDECLARED_BUILTIN (fndecl)))
+    return;
+
+  location_t loc = cp_expr_loc_or_input_loc (arg);
+  if (!policy_active_at_p (get_identifier ("variadic_functions"), loc))
+    return;
+
+  auto_diagnostic_group d;
+  if (fndecl)
+    {
+      error_at (loc, "passing an argument to the %<...%> of %qD in policy "
+		"%<variadic_functions%>", fndecl);
+      inform (DECL_SOURCE_LOCATION (fndecl), "declared here");
+    }
+  else
+    error_at (loc, "passing an argument to the %<...%> of a function in "
+	      "policy %<variadic_functions%>");
+}
+
 /* The overloaded operators that a predefined policy disallows: their
    definitions, and their uses if USES_P.  NOTE, if not NULL, explains
    why.  */
@@ -14065,6 +14100,7 @@ init_cp_semantics (void)
   policy_add_known (get_identifier ("no_boolean_ordering"));
   policy_add_known (get_identifier ("no_goto"));
   policy_add_known (get_identifier ("no_mixed_switch"));
+  policy_add_known (get_identifier ("variadic_functions"));
   /* An operator_boolean_binary_overload entry appears twice; adding it
      again is harmless.  */
   for (const auto &op : policy_operators)
