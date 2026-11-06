@@ -45,7 +45,9 @@ dynamic (B *b, const int *ci)
 
 [[policy::suppress(dynamic_cast)]];
 
-// A policy group defined with them, and the other casts.
+// A policy group defined with them, and the other casts: a C-style cast
+// with the effect of one of them is disallowed as well (attr-policy-cast2.C
+// has the details), and the rest are not.
 [[policy::define(casts, reinterpret_cast, const_cast, dynamic_cast)]];
 [[policy::activate(casts)]];
 
@@ -56,8 +58,9 @@ all (B *b, const int *ci, double d)
   (void) const_cast<int *> (ci);		// { dg-error "use of 'const_cast'" }
   (void) dynamic_cast<D *> (b);			// { dg-error "use of 'dynamic_cast'" }
   (void) static_cast<D *> (b);
-  (void) (int *) ci;
-  (void) (long) b;
+  (void) (int *) ci;				// { dg-error "casts away qualifiers, as 'const_cast' does" }
+  (void) (long) b;				// { dg-error "effect of 'reinterpret_cast'" }
+  (void) (const int *) ci;
   (void) int (d);
   (void) __builtin_bit_cast (long, d);
 }

@@ -10249,22 +10249,67 @@ build_c_cast (location_t loc, tree type, tree expr)
 
 /* Like the "build_c_cast" used for c-common, but using cp_expr to
    preserve location information even for tree nodes that don't
-   support it.  */
+   support it.  USER_P is as for cp_build_c_cast.  */
 
 cp_expr
-build_c_cast (location_t loc, tree type, cp_expr expr)
+build_c_cast (location_t loc, tree type, cp_expr expr, bool user_p)
 {
-  cp_expr result = cp_build_c_cast (loc, type, expr, tf_warning_or_error);
+  cp_expr result = cp_build_c_cast (loc, type, expr, tf_warning_or_error,
+				    user_p);
   result.set_location (loc);
   return result;
 }
 
+/* Give an error if COMPLAIN allows it and the C-style cast at LOC from
+   VALUE to TYPE has the effect of a cast that an active policy named after
+   it disallows: of a reinterpret_cast, if REINTERPRET_P, and of a
+   const_cast, if it casts away qualifiers.  Only the latter is a matter of
+   the types: a C-style cast that is a const_cast by [expr.cast] can also
+   add qualifiers or change nothing, which a static_cast does as well.  A
+   C-style cast is never a dynamic_cast, so that policy does not apply.  As
+   the other policy checks, this is only checked outside of templates, so
+   that each cast is checked once, when it is instantiated, and without
+   changing whether a substitution fails.  */
+
+static void
+policy_check_c_cast (location_t loc, tree type, tree value,
+		     bool reinterpret_p, tsubst_flags_t complain)
+{
+  if (!(complain & tf_error) || processing_template_decl)
+    return;
+
+  tree reinterpret = ridpointers[RID_REINTCAST];
+  if (reinterpret_p && policy_active_at_p (reinterpret, loc))
+    error_at (loc, "cast with the effect of %qE in policy %qE",
+	      reinterpret, reinterpret);
+
+  tree const_ = ridpointers[RID_CONSTCAST];
+  if (!policy_active_at_p (const_, loc))
+    return;
+  /* A cast to a non-reference type converts an array or function operand
+     to a pointer first.  */
+  tree from = TREE_TYPE (value);
+  if (!TYPE_REF_P (type))
+    {
+      if (TREE_CODE (from) == ARRAY_TYPE)
+	from = build_pointer_type (TREE_TYPE (from));
+      else if (FUNC_OR_METHOD_TYPE_P (from))
+	from = build_pointer_type (from);
+    }
+  if (casts_away_constness (from, type, tf_none))
+    error_at (loc, "cast that casts away qualifiers, as %qE does, in "
+	      "policy %qE", const_, const_);
+}
+
 /* Build an expression representing an explicit C-style cast to type
-   TYPE of expression EXPR.  */
+   TYPE of expression EXPR.  USER_P is true for a cast that the user wrote,
+   in cast notation or functional notation, which the policies
+   reinterpret_cast and const_cast are checked for (policy_check_c_cast);
+   the casts the compiler builds itself are not.  */
 
 tree
 cp_build_c_cast (location_t loc, tree type, tree expr,
-		 tsubst_flags_t complain)
+		 tsubst_flags_t complain, bool user_p)
 {
   tree value = expr;
   tree result;
@@ -10343,6 +10388,9 @@ cp_build_c_cast (location_t loc, tree type, tree expr,
 	{
 	  maybe_warn_about_useless_cast (loc, type, value, complain);
 	  maybe_warn_about_cast_ignoring_quals (loc, type, complain);
+	  if (user_p)
+	    policy_check_c_cast (loc, type, value, /*reinterpret_p=*/false,
+				 complain);
 	}
       else if (complain & tf_error)
 	build_const_cast_1 (loc, type, value, tf_error, &valid_p);
@@ -10353,9 +10401,13 @@ cp_build_c_cast (location_t loc, tree type, tree expr,
   result = build_static_cast_1 (loc, type, value, /*c_cast_p=*/true,
 				&valid_p, complain);
   /* Or a reinterpret_cast.  */
+  bool reinterpret_p = false;
   if (!valid_p)
-    result = build_reinterpret_cast_1 (loc, type, value, /*c_cast_p=*/true,
-				       &valid_p, complain);
+    {
+      result = build_reinterpret_cast_1 (loc, type, value, /*c_cast_p=*/true,
+					 &valid_p, complain);
+      reinterpret_p = valid_p;
+    }
   /* The static_cast or reinterpret_cast may be followed by a
      const_cast.  */
   if (valid_p
@@ -10367,6 +10419,8 @@ cp_build_c_cast (location_t loc, tree type, tree expr,
 
       maybe_warn_about_useless_cast (loc, type, value, complain);
       maybe_warn_about_cast_ignoring_quals (loc, type, complain);
+      if (user_p)
+	policy_check_c_cast (loc, type, value, reinterpret_p, complain);
 
       /* Non-class rvalues always have cv-unqualified type.  */
       if (!CLASS_TYPE_P (type))

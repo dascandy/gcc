@@ -11915,7 +11915,7 @@ cp_parser_cast_expression (cp_parser *parser, bool address_p, bool cast_p,
 	      location_t cast_loc = make_location (open_paren_loc,
 						   open_paren_loc,
 						   expr.get_finish ());
-	      expr = build_c_cast (cast_loc, type, expr);
+	      expr = build_c_cast (cast_loc, type, expr, /*user_p=*/true);
 	      return expr;
 	    }
 	}
@@ -39573,7 +39573,7 @@ cp_parser_functional_cast (cp_parser* parser, tree type)
   location_t combined_loc = make_location (start_loc, start_loc,
 					   parser->lexer);
   cast = build_functional_cast (combined_loc, type, expression_list,
-                                tf_warning_or_error);
+				tf_warning_or_error, /*user_p=*/true);
 
   /* [expr.const]/1: In an integral constant expression "only type
      conversions to integral or enumeration type can be used".  */

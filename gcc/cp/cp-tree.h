@@ -9157,9 +9157,9 @@ extern tree build_const_cast			(location_t, tree, tree,
 						 tsubst_flags_t);
 extern tree build_c_cast			(location_t, tree, tree);
 extern cp_expr build_c_cast			(location_t loc, tree type,
-						 cp_expr expr);
+						 cp_expr expr, bool = false);
 extern tree cp_build_c_cast			(location_t, tree, tree,
-						 tsubst_flags_t);
+						 tsubst_flags_t, bool = false);
 extern bool maybe_warn_self_move		(location_t, tree, tree);
 extern cp_expr build_x_modify_expr		(location_t, tree,
 						 enum tree_code, tree,
@@ -9330,7 +9330,7 @@ extern tree build_x_arrow			(location_t, tree,
 						 tsubst_flags_t);
 extern tree build_m_component_ref		(tree, tree, tsubst_flags_t);
 extern tree build_functional_cast		(location_t, tree, tree,
-						 tsubst_flags_t);
+						 tsubst_flags_t, bool = false);
 extern tree add_exception_specifier		(tree, tree, tsubst_flags_t);
 extern tree merge_exception_specifiers		(tree, tree);
 extern void set_target_expr_eliding		(tree);

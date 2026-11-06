@@ -22444,7 +22444,9 @@ tsubst_expr (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 	switch (TREE_CODE (t))
 	  {
 	  case CAST_EXPR:
-	    r = build_functional_cast (input_location, type, op, complain);
+	    /* A cast the user wrote, in cast or functional notation.  */
+	    r = build_functional_cast (input_location, type, op, complain,
+				       /*user_p=*/true);
 	    break;
 	  case REINTERPRET_CAST_EXPR:
 	    r = build_reinterpret_cast (input_location, type, op, complain);
