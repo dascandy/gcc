@@ -51,7 +51,7 @@ struct [[policy::remove(cls)]] C {};
 [[policy::activate(cls), policy::activate(var)]];
 
 // An ignored removal does not make a policy known.
-[[policy::remove(ignored)]] extern int e;	// { dg-warning "only applies to" }
+struct [[policy::remove(ignored)]] F;		// { dg-warning "only applies to" }
 [[policy::activate(ignored)]];			// { dg-warning "unknown policy 'ignored'" }
 
 void

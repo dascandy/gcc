@@ -25,6 +25,7 @@ template <typename T> struct [[policy::remove(core)]] S2 {};
 template <typename T> struct [[policy::remove(core)]] S2<T *> {};
 [[policy::remove(core)]] int v1;
 [[policy::remove(core)]] extern int v2 = 1;	// { dg-warning "initialized and declared" }
+[[policy::remove(core)]] extern int v5;
 template <typename T> [[policy::remove(core)]] T v3 = T ();
 [[using policy: remove(core)]] int v4;
 [[policy::remove(core)]] typedef int T1;
@@ -39,7 +40,6 @@ g ()
 }
 
 // Rejected.
-[[policy::remove(core)]] extern int e1;		// { dg-warning "'policy::remove' attribute only applies to" }
 struct S3 {
   [[policy::remove(core)]] static int s;		// { dg-warning "only applies to" }
   [[policy::remove(core)]] int d;			// { dg-warning "only applies to" }
@@ -47,6 +47,11 @@ struct S3 {
 struct [[policy::remove(core)]] F;			// { dg-warning "only applies to" }
 void p ([[policy::remove(core)]] int);		// { dg-warning "only applies to" }
 enum [[policy::remove(core)]] E { e };		// { dg-warning "only applies to" }
+void
+h ()
+{
+  [[policy::remove(core)]] extern int e1;		// { dg-warning "only applies to" }
+}
 int [[policy::remove(core)]] t;			// { dg-warning "attribute ignored" }
 
 [[policy::remove]] void a1 ();			// { dg-error "wrong number of arguments" }

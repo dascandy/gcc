@@ -36,6 +36,7 @@ template <> struct [[policy::remove(core)]] E<int> { int t; };
 
 // Variable and variable template.
 [[policy::remove(core)]] int v;
+[[policy::remove(core)]] extern int ev;
 template <typename T> [[policy::remove(core)]] T vt = T ();
 
 void
@@ -59,6 +60,7 @@ use ()
   E<long> e1;
   E<int> e2;		// { dg-error "'E<int>' was policy-removed" }
   v = 1;		// { dg-error "'v' was policy-removed" }
+  ev = 1;		// { dg-error "'ev' was policy-removed" }
   vt<int> = 1;		// { dg-error "'vt<int>' was policy-removed" }
 }
 
@@ -77,6 +79,7 @@ use_inactive ()
   P<char *> p;
   E<int> e;
   v = 2;
+  ev = 2;
   vt<char> = 2;
   {
     [[policy::activate(other)]];
