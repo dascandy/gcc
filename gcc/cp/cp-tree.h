@@ -8647,6 +8647,9 @@ extern GTY(()) tree current_policy_state;
 extern bool policy_active_p			(tree);
 extern bool policy_active_at_p			(tree, location_t);
 extern bool policy_removed_p			(tree);
+extern void policy_check_builtin_operator	(location_t, enum tree_code,
+						 tree, tree, tree, bool,
+						 tsubst_flags_t);
 extern void policy_removed_error		(location_t, tree, tree);
 extern void policy_set_active			(tree, bool);
 extern bool policy_known_p			(tree);
