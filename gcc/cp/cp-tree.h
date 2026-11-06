@@ -8654,13 +8654,13 @@ extern void policy_check_builtin_operator	(location_t, enum tree_code,
 						 tree, tree, tree, bool,
 						 tsubst_flags_t);
 extern void policy_removed_error		(location_t, tree, tree);
-extern void policy_set_active			(tree, bool);
+extern void policy_set_active			(tree, bool, location_t);
 extern bool policy_known_p			(tree);
 extern void policy_add_known			(tree);
 extern void policy_add_removal			(tree);
 extern bool policy_defined_p			(tree);
 extern void policy_define			(location_t, tree, tree);
-extern bool policy_unchanged_p			(tree, bool);
+extern bool policy_redundant_p			(tree, bool, location_t);
 extern void push_policy_state			(void);
 extern void pop_policy_state			(void);
 extern void policy_capture_for_template		(tree);

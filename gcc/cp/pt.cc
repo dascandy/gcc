@@ -20392,7 +20392,8 @@ tsubst_stmt (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 
     case POLICY_STMT:
       policy_set_active (POLICY_STMT_GROUP (t),
-			 POLICY_STMT_ACTIVE (t) == boolean_true_node);
+			 POLICY_STMT_ACTIVE (t) == boolean_true_node,
+			 EXPR_LOCATION (t));
       /* Keep it for the instantiation of a generic lambda whose body is
 	 only partially instantiated here.  */
       if (processing_template_decl)

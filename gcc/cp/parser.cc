@@ -15109,11 +15109,11 @@ cp_parser_policy_change (tree name, tree args, bool active, location_t loc,
       error_at (loc, "unknown policy %qE", group);
       return;
     }
-  if (policy_unchanged_p (group, active))
+  if (policy_redundant_p (group, active, loc))
     warning_at (loc, OPT_Wredundant_policy,
 		active ? G_("policy %qE is already active")
 		: G_("policy %qE is already suppressed"), group);
-  policy_set_active (group, active);
+  policy_set_active (group, active, loc);
 
   /* Replay the change when instantiating the template.  */
   if (context == sac_namespace || !processing_template_decl)

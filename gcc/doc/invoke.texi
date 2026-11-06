@@ -5146,9 +5146,13 @@ This warning is enabled by @option{-Wall}.
 Warn when a @code{[[policy::activate(@var{group})]]} attribute activates a
 policy group that is already active, or a
 @code{[[policy::suppress(@var{group})]]} attribute suppresses a policy group
-that is not active.  For a group defined by @code{[[policy::define]]}, warn
-only when every policy group it expands to is already in the requested
-state.  For example:
+that is not active, and the last change to that group made in the same
+source file already put it in that state.  Changes made in other files, such
+as an including file or an included header, do not count, since they can
+depend on what a translation unit includes and in what order; so suppressing
+a group that no earlier change in the file activated never warns.  For a
+group defined by @code{[[policy::define]]}, warn only when this holds for
+every policy group it expands to.  For example:
 
 @smallexample
 [[policy::activate(no_empty_statement)]];
