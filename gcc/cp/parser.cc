@@ -35466,6 +35466,171 @@ cp_parser_assertion_control_specifier (cp_parser *parser)
   return label_expr;
 }
 
+/* Permanently remove TOK from the token stream, as cp_lexer_purge_token
+   does for the next token.  */
+
+static void
+cp_lexer_purge_token_at (cp_token *tok)
+{
+  tok->purged_p = true;
+  tok->location = UNKNOWN_LOCATION;
+  tok->u.value = NULL_TREE;
+  tok->keyword = RID_MAX;
+}
+
+/* Return true if TOK is the identifier `policy'.  */
+
+static bool
+cp_policy_identifier_p (const cp_token *tok)
+{
+  return tok->type == CPP_NAME && id_equal (tok->u.value, "policy");
+}
+
+/* If the assertion-control-specifier whose `<' is the next token is made of
+   nothing but `policy (group)' terms, the operands of its top-level `|'
+   chain, take the terms out of it and return them as the TREE_LIST that
+   CONTRACT_POLICY_LABELS holds.  Otherwise return NULL_TREE, and leave the
+   specifier to cp_parser_terminating_specifier and
+   cp_parser_assertion_control_specifier.
+
+   Top level means outside any bracketed group or template-argument-list,
+   as cp_assertion_control_end counts them: `policy' is an identifier with
+   special meaning there, not looked up.  Whether a group is active is
+   decided here, where the assertion is written, also for a function
+   contract specifier whose predicate is deferred.  The terms, and the `|'
+   that joined them, are purged, and the specifier, now empty, consumed.
+
+   The specifier can be parsed again after a tentative parse is rolled back,
+   by which time the terms are gone from the token stream: the result is
+   kept on the `<', whose token value is otherwise unused, and reused.  */
+
+static tree
+cp_parser_contract_policy_terms (cp_parser *parser)
+{
+  cp_token *open = cp_lexer_peek_token (parser->lexer);
+  if (open->type != CPP_LESS)
+    return NULL_TREE;
+
+  tree labels = open->u.value;
+  if (!labels || TREE_CODE (labels) != TREE_LIST)
+    {
+      bool split = false;
+      size_t end = cp_assertion_control_end (parser, &split);
+      if (!end)
+	return NULL_TREE;
+
+      /* TOKS[0] is the `<', TOKS[CLOSE] the token that ends the
+	 specifier.  */
+      auto_vec<cp_token *, 32> toks;
+      for (cp_token *t = open; toks.length () < end; ++t)
+	if (!t->purged_p)
+	  toks.safe_push (t);
+      const unsigned close = end - 1;
+
+      /* Split the label into the operands of its top-level `|' chain,
+	 OPS[K] being the half-open range of token indices of operand K and
+	 SEPS[K] the index of the `|' after it.  */
+      auto_vec<std::pair<unsigned, unsigned>, 8> ops;
+      auto_vec<unsigned, 8> seps;
+      unsigned nest = 0, angle = 0, start = 1;
+      for (unsigned i = 1; i < close; ++i)
+	{
+	  cp_token *tok = toks[i];
+	  bool top = !nest && !angle;
+	  switch (tok->type)
+	    {
+	    case CPP_OPEN_PAREN:
+	    case CPP_OPEN_SQUARE:
+	    case CPP_OPEN_BRACE:
+	      ++nest;
+	      break;
+	    case CPP_CLOSE_PAREN:
+	    case CPP_CLOSE_SQUARE:
+	    case CPP_CLOSE_BRACE:
+	      nest -= nest > 0;
+	      break;
+	    case CPP_LESS:
+	      angle += !nest;
+	      break;
+	    case CPP_GREATER:
+	      if (!nest && angle)
+		--angle;
+	      break;
+	    case CPP_RSHIFT:
+	      if (!nest)
+		angle = angle >= 2 ? angle - 2 : 0;
+	      break;
+	    case CPP_OR:
+	      if (top)
+		{
+		  ops.safe_push (std::make_pair (start, i));
+		  seps.safe_push (i);
+		  start = i + 1;
+		}
+	      break;
+	    default:
+	      break;
+	    }
+	}
+      ops.safe_push (std::make_pair (start, close));
+
+      /* Which operands are terms.  A specifier with anything else is left
+	 alone.  */
+      auto_vec<bool, 8> term;
+      bool all = true;
+      for (auto op : ops)
+	{
+	  bool t = (op.second - op.first == 4
+		    && cp_policy_identifier_p (toks[op.first])
+		    && toks[op.first + 1]->type == CPP_OPEN_PAREN
+		    && toks[op.first + 2]->type == CPP_NAME
+		    && toks[op.first + 3]->type == CPP_CLOSE_PAREN);
+	  term.safe_push (t);
+	  all &= t;
+	}
+      if (!all)
+	return NULL_TREE;
+
+      /* Record the terms, in source order, and take them out.  A `|' stays
+	 only if it joins two operands that both stay.  */
+      labels = NULL_TREE;
+      bool kept_before = false;
+      for (unsigned k = 0; k < ops.length (); ++k)
+	{
+	  if (k > 0 && !(kept_before && !term[k]))
+	    cp_lexer_purge_token_at (toks[seps[k - 1]]);
+	  if (!term[k])
+	    {
+	      kept_before = true;
+	      continue;
+	    }
+	  cp_token *name = toks[ops[k].first + 2];
+	  tree group = name->u.value;
+	  if (purpose_member (group, labels))
+	    warning_at (name->location, OPT_Wredundant_policy,
+			"policy %qE is named more than once in the "
+			"assertion-control-specifier", group);
+	  else
+	    labels = tree_cons (group,
+				policy_label_active_p (group, name->location)
+				? boolean_true_node : boolean_false_node,
+				labels);
+	  for (unsigned i = ops[k].first; i < ops[k].second; ++i)
+	    cp_lexer_purge_token_at (toks[i]);
+	}
+      labels = nreverse (labels);
+      open->u.value = labels;
+    }
+
+  /* Nothing else in the specifier: it is done with.  */
+  if (cp_lexer_nth_token_is (parser->lexer, 2, CPP_GREATER))
+    {
+      cp_lexer_consume_token (parser->lexer);
+      cp_lexer_consume_token (parser->lexer);
+    }
+  return labels;
+}
+
 /* P4451: parse an assertion-control-specifier `< terminating >' while
    -fcontracts-p3400, under which it is an ordinary label, is off.
    `terminating' is an identifier with special meaning there, not looked up
@@ -35714,6 +35879,10 @@ cp_parser_contract_assert (cp_parser *parser, cp_token *token)
   token = cp_lexer_consume_token (parser->lexer);
   location_t loc = token->location;
 
+  /* The `policy (group)' terms of the assertion-control-specifier, taken
+     out of it before the rest is parsed.  */
+  tree policy_labels = cp_parser_contract_policy_terms (parser);
+
   /* P4451: `< terminating >' without P3400.  Its lookup checks run here,
      where the predicate is parsed.  */
   bool terminating = cp_parser_terminating_specifier (parser);
@@ -35788,7 +35957,7 @@ cp_parser_contract_assert (cp_parser *parser, cp_token *token)
   /* Build the contract.  */
   tree contract = grok_contract (cont_assert,
 			    /*result*/NULL_TREE, condition, loc, message,
-			    label, requires_clause, comment);
+			    label, requires_clause, comment, policy_labels);
   if (terminating && contract && contract != error_mark_node)
     mark_contract_terminating (contract);
   processing_postcondition_predicate = old_pc;
@@ -36149,6 +36318,12 @@ cp_parser_function_contract_specifier (cp_parser *parser, bool defer)
      same answer.  See the comment on the deferral below.  */
   const bool defer_p
     = defer || (current_class_type && TYPE_BEING_DEFINED (current_class_type));
+
+  /* The `policy (group)' terms of the assertion-control-specifier, taken
+     out of it before the rest is parsed.  Whether a group is active is
+     decided here, where the specifier is written, even when the predicate
+     is deferred.  */
+  tree policy_labels = cp_parser_contract_policy_terms (parser);
 
   /* P4451: `< terminating >' without P3400.  Its lookup checks run where a
      label would be parsed: here for a lambda, otherwise in
@@ -36531,7 +36706,8 @@ cp_parser_function_contract_specifier (cp_parser *parser, bool defer)
 	identifier.maybe_add_location_wrapper ();
       contract = grok_contract (contract_name, identifier,
 				condition, loc, /*message*/NULL_TREE, label,
-				requires_clause);
+				requires_clause, /*comment*/NULL,
+				policy_labels);
       if (terminating && contract != error_mark_node)
 	mark_contract_terminating (contract);
 
@@ -36664,7 +36840,7 @@ cp_parser_function_contract_specifier (cp_parser *parser, bool defer)
 
       contract = grok_contract (contract_name, result,
 				condition, loc, message, label,
-				requires_clause, comment);
+				requires_clause, comment, policy_labels);
       if (terminating && contract != error_mark_node)
 	mark_contract_terminating (contract);
 
