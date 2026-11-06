@@ -5,4 +5,5 @@
 [[policy::activate(cout)]];		// { dg-warning "unknown policy 'cout'" }
 [[policy::activate(unicode)]];
 [[policy::activate(c_string)]];
+[[policy::activate(wide_string)]];
 [[policy::activate(inefficient)]];
