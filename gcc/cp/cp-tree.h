@@ -8649,6 +8649,7 @@ extern void finish_compound_stmt		(tree);
 extern GTY(()) tree current_policy_state;
 extern bool policy_active_p			(tree);
 extern bool policy_active_at_p			(tree, location_t);
+extern bool policy_label_active_p		(tree, location_t);
 extern bool policy_removed_p			(tree);
 extern void policy_check_builtin_operator	(location_t, enum tree_code,
 						 tree, tree, tree, bool,

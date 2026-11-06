@@ -2295,6 +2295,29 @@ policy_active_p (tree group)
   return false;
 }
 
+/* Return true if a `policy (GROUP)' term of a contract assertion's
+   assertion-control-specifier, naming GROUP at LOC, is active: if GROUP is
+   in the active set or, if policy::define defines it, if every policy it
+   expands to is.  Unlike policy_active_at_p, a system header is not exempt:
+   the term does not disallow anything, it lets a user who activates GROUP
+   have the assertions labelled with it, in a library too, enforced.  GROUP
+   can still become known later in the translation unit, so an unknown one
+   is only diagnosed at its end.  */
+
+bool
+policy_label_active_p (tree group, location_t loc)
+{
+  if (!policy_known_p (group))
+    policy_note_unknown (group, true, loc);
+  tree expansion = policy_expansion (group);
+  if (!expansion)
+    return policy_active_p (group);
+  for (tree g = expansion; g; g = TREE_CHAIN (g))
+    if (!policy_active_p (TREE_VALUE (g)))
+      return false;
+  return true;
+}
+
 /* Return true if policy GROUP is active and applies to code at LOC.  The
    policies never apply to code in a system header: users cannot change it,
    and it is where the low-level features that policies disallow are used to

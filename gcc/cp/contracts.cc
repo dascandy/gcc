@@ -2472,6 +2472,47 @@ contract_base_allowed_mask ()
   return mask;
 }
 
+/* The semantics a contract assertion may use while a `policy (group)' term
+   of its assertion-control-specifier is active: those that end the program
+   on a violation -- enforce, quick_enforce and noexcept_enforce -- and, for
+   its analysis evaluation, prove.  As for a label, the
+   -fcontracts-p4298 and -fcontracts-p4405 gates remove the last two when a
+   query is built (contract_base_allowed_mask).  */
+#define CES_POLICY_ACTIVE_MASK \
+  ((1 << CES_ENFORCE) | (1 << CES_QUICK) | (1 << CES_NOEXCEPT_ENFORCE) \
+   | (1 << CES_PROVE))
+
+/* The first policy group of a `policy (group)' term of CONTRACT that was
+   active where CONTRACT was written, or NULL_TREE if there is none.  */
+
+static tree
+contract_active_policy (tree contract)
+{
+  for (tree t = CONTRACT_POLICY_LABELS (contract); t; t = TREE_CHAIN (t))
+    if (TREE_VALUE (t) == boolean_true_node)
+      return TREE_PURPOSE (t);
+  return NULL_TREE;
+}
+
+/* The flag-independent set of semantics CONTRACT's `policy (group)' terms
+   allow: CES_POLICY_ACTIVE_MASK if any of them was active where CONTRACT
+   was written, otherwise no restriction.  Several active terms allow the
+   intersection of their sets, which is the same set.
+
+   It is kept out of CONTRACT_ALLOWED_MASK and applied only where a query is
+   built: whether a policy is active depends on where the declaration is,
+   so it can differ between translation units, while the settled-evaluation
+   tests (contract_evaluation_settled_p, contract_premise_settled_p) rely on
+   the stored mask being the same in all of them.  */
+
+static uint16_t
+contract_policy_mask (tree contract)
+{
+  return (contract_active_policy (contract)
+	  ? (uint16_t) CES_POLICY_ACTIVE_MASK
+	  : (uint16_t) CES_ALL_ALLOWED_WITH_EXTENSIONS);
+}
+
 /* Reconstruct a base, callee-side, non-constant-evaluation contract_query
    from the stored AST fields.  */
 
@@ -2496,12 +2537,14 @@ make_contract_query (tree contract, tree fndecl)
      set), or NULL_TREE for no restriction.  The -fcontracts-allow-assume gate
      is applied here, at query construction, by intersecting with the gated
      base set -- so it applies uniformly to every contract (including template
-     instantiations) regardless of where the mask was computed.  */
+     instantiations) regardless of where the mask was computed.  An active
+     `policy (group)' term narrows it here as well (contract_policy_mask).  */
   tree mask_tree = CONTRACT_ALLOWED_MASK (contract);
   uint16_t label_mask = mask_tree
     ? (uint16_t) tree_to_uhwi (mask_tree)
     : (uint16_t) CES_ALL_ALLOWED_WITH_EXTENSIONS;
-  q.allowed_mask = label_mask & contract_base_allowed_mask ();
+  q.allowed_mask = (label_mask & contract_policy_mask (contract)
+		    & contract_base_allowed_mask ());
 
   q.groups = NULL;
   return q;
@@ -7082,6 +7125,11 @@ copy_and_remap_contracts (tree dest, tree source,
 		  uint16_t mask
 		    = (m ? (uint16_t) tree_to_uhwi (m)
 		       : (uint16_t) CES_ALL_ALLOWED_WITH_EXTENSIONS);
+		  /* The policy restriction is otherwise applied after the
+		     stored mask (make_contract_query), and would take IGNORE
+		     out again: fold it in first.  */
+		  mask &= contract_policy_mask (stmt);
+		  CONTRACT_POLICY_LABELS (stmt) = NULL_TREE;
 		  if (add_ignore)
 		    mask |= (1 << CES_IGNORE);
 		  CONTRACT_ALLOWED_MASK (stmt)
@@ -9373,7 +9421,7 @@ resolve_contract_label (tree contract, tree label, location_t loc)
 tree
 grok_contract (tree contract_spec, tree result, cp_expr condition,
 	       location_t loc, tree message, tree label,
-	       tree requires_clause, char *comment)
+	       tree requires_clause, char *comment, tree policy_labels)
 {
   if (condition == error_mark_node)
     {
@@ -9410,30 +9458,32 @@ grok_contract (tree contract_spec, tree result, cp_expr condition,
   tree contract;
   if (code != POSTCONDITION_STMT)
     {
-      /* PRECONDITION_STMT / ASSERTION_STMT: 12 operands, all NULL_TREE.
+      /* PRECONDITION_STMT / ASSERTION_STMT: 13 operands, all NULL_TREE.
 	 Operands are filled in below and by ensure_evaluation_semantic.  */
       contract = build_nt (code,
 			   NULL_TREE, NULL_TREE, NULL_TREE, NULL_TREE,
 			   NULL_TREE, NULL_TREE, NULL_TREE, NULL_TREE,
-			   NULL_TREE, NULL_TREE, NULL_TREE, NULL_TREE);
+			   NULL_TREE, NULL_TREE, NULL_TREE, NULL_TREE,
+			   NULL_TREE);
       TREE_TYPE (contract) = void_type_node;
       SET_EXPR_LOCATION (contract, loc);
     }
   else
     {
-      /* POSTCONDITION_STMT: 15 operands; result (identifier) at op 12,
-	 captures at op 13, result attributes at op 14.  */
+      /* POSTCONDITION_STMT: 16 operands; result (identifier) at op 13,
+	 captures at op 14, result attributes at op 15.  */
       contract = build_nt (code,
 			   NULL_TREE, NULL_TREE, NULL_TREE, NULL_TREE,
 			   NULL_TREE, NULL_TREE, NULL_TREE, NULL_TREE,
 			   NULL_TREE, NULL_TREE, NULL_TREE, NULL_TREE,
-			   result, NULL_TREE, NULL_TREE);
+			   NULL_TREE, result, NULL_TREE, NULL_TREE);
       TREE_TYPE (contract) = void_type_node;
       SET_EXPR_LOCATION (contract, loc);
     }
 
   CONTRACT_LABEL (contract) = label;
   CONTRACT_REQUIRES_CLAUSE (contract) = requires_clause;
+  CONTRACT_POLICY_LABELS (contract) = policy_labels;
 
   /* Validate the label and compute its derived facets.  A label deferred
      with the predicate (a DEFERRED_PARSE) is resolved when it is parsed,

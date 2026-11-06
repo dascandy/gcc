@@ -579,7 +579,7 @@ DEFTREECODE (CO_RETURN_EXPR, "co_return", tcc_statement, 2)
 
 /* Different flavors of contracts.
 
-   ASSERTION_STMT, PRECONDITION_STMT: 12 operands
+   ASSERTION_STMT, PRECONDITION_STMT: 13 operands
 
    Group 1 -- Structural (ops 0-6, immutable after parse):
      Op0: kind (CAK_PRE, CAK_POST, CAK_ASSERT, etc.)
@@ -603,17 +603,22 @@ DEFTREECODE (CO_RETURN_EXPR, "co_return", tcc_statement, 2)
 	   TREE_LIST (PURPOSE=IDENTIFIER_NODE name, VALUE=INTEGER_CST packing
 	   dyn_linkage<<1|dyn_provideweak), or NULL_TREE when not dynamic
 
-   POSTCONDITION_STMT: 15 operands (ops 0-11 same as above, plus):
-     Op12: postcondition_identifier (optional result name)
-     Op13: postcondition_captures (optional TREE_LIST of capture VAR_DECLs,
+   Group 4 -- Policy labels (op 12, set at parse time):
+     Op12: policy labels (optional TREE_LIST of `policy (group)' terms of
+	   the assertion-control-specifier, TREE_PURPOSE the group and
+	   TREE_VALUE boolean_true_node if it was active at the assertion)
+
+   POSTCONDITION_STMT: 16 operands (ops 0-12 same as above, plus):
+     Op13: postcondition_identifier (optional result name)
+     Op14: postcondition_captures (optional TREE_LIST of capture VAR_DECLs,
 	   P3098)
-     Op14: result attribute-specifier-seq, written on the result-name
+     Op15: result attribute-specifier-seq, written on the result-name
 	   introducer and applied when the result VAR_DECL is built.  The
 	   predicate is always parsed late, so the attributes have to travel
 	   on the node to reach the point the variable is created.  */
-DEFTREECODE (ASSERTION_STMT, "assertion_stmt", tcc_statement, 12)
-DEFTREECODE (PRECONDITION_STMT, "precondition_stmt", tcc_statement, 12)
-DEFTREECODE (POSTCONDITION_STMT, "postcondition_stmt", tcc_statement, 15)
+DEFTREECODE (ASSERTION_STMT, "assertion_stmt", tcc_statement, 13)
+DEFTREECODE (PRECONDITION_STMT, "precondition_stmt", tcc_statement, 13)
+DEFTREECODE (POSTCONDITION_STMT, "postcondition_stmt", tcc_statement, 16)
 
 /* A reference to a translation-unit local entity.
 

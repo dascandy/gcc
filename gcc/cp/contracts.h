@@ -142,18 +142,29 @@ enum detection_mode : uint16_t {
 #define CONTRACT_CONDITION_DEFERRED_P(NODE) \
   (TREE_CODE (CONTRACT_CONDITION (NODE)) == DEFERRED_PARSE)
 
-/* Group 4 -- Postcondition-specific (ops 12-14, POSTCONDITION_STMT only).  */
+/* Group 4 -- Policy labels (op 12).  */
+
+/* The `policy (group)' terms of the assertion-control-specifier, a
+   TREE_LIST in source order whose TREE_PURPOSE is the policy group and
+   whose TREE_VALUE is boolean_true_node if the group was active where the
+   assertion was written, else boolean_false_node; or NULL_TREE if there are
+   none.  While any of them was active, the assertion may only use the
+   semantics of CES_POLICY_ACTIVE_MASK.  */
+#define CONTRACT_POLICY_LABELS(NODE) \
+  (TREE_OPERAND (CONTRACT_CHECK (NODE), 12))
+
+/* Group 5 -- Postcondition-specific (ops 13-15, POSTCONDITION_STMT only).  */
 
 /* The VAR_DECL of a postcondition result.  For deferred contracts, this
    is an IDENTIFIER.  */
 #define POSTCONDITION_IDENTIFIER(NODE) \
-  (TREE_OPERAND (POSTCONDITION_STMT_CHECK (NODE), 12))
+  (TREE_OPERAND (POSTCONDITION_STMT_CHECK (NODE), 13))
 
 /* The postcondition captures -- a TREE_LIST of capture VAR_DECLs with
    DECL_INITIAL set to the initializer expression, or NULL_TREE if the
    postcondition has no captures (P3098).  */
 #define POSTCONDITION_CAPTURES(NODE) \
-  (TREE_OPERAND (POSTCONDITION_STMT_CHECK (NODE), 13))
+  (TREE_OPERAND (POSTCONDITION_STMT_CHECK (NODE), 14))
 
 /* The attribute-specifier-seq written on the result-name-introducer, or
    NULL_TREE.  The predicate is always parsed late -- the seq belongs to the
@@ -161,7 +172,7 @@ enum detection_mode : uint16_t {
    longer in scope -- so the attributes cannot be applied where they are
    read, and travel here until the result VAR_DECL is built.  */
 #define POSTCONDITION_RESULT_ATTRS(NODE) \
-  (TREE_OPERAND (POSTCONDITION_STMT_CHECK (NODE), 14))
+  (TREE_OPERAND (POSTCONDITION_STMT_CHECK (NODE), 15))
 
 /* For a FUNCTION_DECL of a guarded function, this holds the function decl
    where pre contract checks are emitted.  */
@@ -204,7 +215,8 @@ extern tree grok_contract			(tree, tree, cp_expr,
 						 tree = NULL_TREE,
 						 tree = NULL_TREE,
 						 tree = NULL_TREE,
-						 char * = NULL);
+						 char * = NULL,
+						 tree = NULL_TREE);
 extern tree build_contract_specifiers		(vec<tree, va_gc> *);
 extern tree contract_specifiers_concat		(tree, tree);
 extern void resolve_contract_label		(tree, tree, location_t);
