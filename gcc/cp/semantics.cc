@@ -14098,13 +14098,18 @@ init_cp_semantics (void)
   policy_add_known (get_identifier ("pointer_arithmetic"));
   policy_add_known (get_identifier ("binary_op_on_bool"));
   policy_add_known (get_identifier ("no_boolean_ordering"));
+  policy_add_known (get_identifier ("raw_new_delete"));
   policy_add_known (get_identifier ("no_goto"));
+  policy_add_known (get_identifier ("no_wchar_t"));
   policy_add_known (get_identifier ("no_mixed_switch"));
   policy_add_known (get_identifier ("variadic_functions"));
   /* An operator_boolean_binary_overload entry appears twice; adding it
      again is harmless.  */
   for (const auto &op : policy_operators)
     policy_add_known (get_identifier (op.policy));
+  policy_add_known (get_identifier ("reinterpret_cast"));
+  policy_add_known (get_identifier ("const_cast"));
+  policy_add_known (get_identifier ("dynamic_cast"));
 }
 
 
