@@ -8657,6 +8657,7 @@ extern void policy_removed_error		(location_t, tree, tree);
 extern void policy_set_active			(tree, bool, location_t);
 extern bool policy_known_p			(tree);
 extern void policy_add_known			(tree);
+extern void policy_note_unknown			(tree, bool, location_t);
 extern void policy_add_removal			(tree);
 extern bool policy_defined_p			(tree);
 extern void policy_define			(location_t, tree, tree);

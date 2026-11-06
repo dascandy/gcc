@@ -73,7 +73,7 @@ use ()
 // Errors.
 struct E
 {
-  [[policy::activate(unknown)]];		// { dg-error "unknown policy 'unknown'" }
+  [[policy::activate(unknown)]];		// { dg-warning "unknown policy 'unknown'" }
   [[policy::define(local, no_empty_statement)]];	// { dg-error "must appear at namespace scope" }
   [[policy::activate(no_empty_statement)]] int x;	// { dg-warning "'policy::activate' attribute must appear as a separate statement or declaration" }
 };

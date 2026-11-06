@@ -47,6 +47,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimplify.h"
 #include "contracts.h"
 #include "c-family/c-pragma.h"
+#include "spellcheck-tree.h"
+#include "gcc-rich-location.h"
 
 /* There routines provide a modular interface to perform many parsing
    operations.  They may therefore be used during actual parsing, or
@@ -2910,6 +2912,72 @@ policy_add_removal (tree group)
   policy_add_known (group);
 }
 
+/* The first policy::activate or policy::suppress of each policy group that
+   was not known at the time, as the POLICY_STMT for the change.  A group
+   can become known later in the translation unit, so whether it is unknown
+   is only decided at its end, by policy_check_unknown.  */
+
+static GTY(()) vec<tree, va_gc> *policy_unknown_changes;
+
+/* Record that policy GROUP, which is not known yet, is activated if ACTIVE,
+   else suppressed, at LOC.  */
+
+void
+policy_note_unknown (tree group, bool active, location_t loc)
+{
+  if (policy_unknown_changes)
+    for (tree change : *policy_unknown_changes)
+      if (POLICY_STMT_GROUP (change) == group)
+	return;
+  tree change = build_stmt (loc, POLICY_STMT, group,
+			    active ? boolean_true_node : boolean_false_node);
+  vec_safe_push (policy_unknown_changes, change);
+}
+
+/* Warn about each policy group that was activated or suppressed but is
+   still not known at the end of the translation unit, suggesting a known
+   group with a similar name.  */
+
+static void
+policy_check_unknown (void)
+{
+  if (vec_safe_is_empty (policy_unknown_changes))
+    return;
+
+  /* Consider the candidates in a fixed order, so that a tie between them
+     does not depend on where the identifiers were allocated.  */
+  auto_vec<const char *> names;
+  if (known_policies)
+    for (tree group : *known_policies)
+      names.safe_push (IDENTIFIER_POINTER (group));
+  names.qsort ([] (const void *a, const void *b)
+	       {
+		 return strcmp (*(const char *const *) a,
+				*(const char *const *) b);
+	       });
+
+  for (tree change : *policy_unknown_changes)
+    {
+      tree group = POLICY_STMT_GROUP (change);
+      if (policy_known_p (group))
+	continue;
+      location_t loc = EXPR_LOCATION (change);
+      best_match <tree, const char *> bm (group);
+      for (const char *name : names)
+	bm.consider (name);
+      if (const char *hint = bm.get_best_meaningful_candidate ())
+	{
+	  gcc_rich_location richloc (loc);
+	  richloc.add_fixit_replace (hint);
+	  warning_at (&richloc, OPT_Wunknown_policy,
+		      "unknown policy %qE; did you mean %qs?", group, hint);
+	}
+      else
+	warning_at (loc, OPT_Wunknown_policy, "unknown policy %qE", group);
+    }
+  policy_unknown_changes = NULL;
+}
+
 /* Add policy GROUP to the known-policy table.  */
 
 void
@@ -5002,6 +5070,7 @@ void
 finish_translation_unit (void)
 {
   check_policy_state_balance ();
+  policy_check_unknown ();
 
   /* In case there were missing closebraces,
      get us back to the global binding level.  */

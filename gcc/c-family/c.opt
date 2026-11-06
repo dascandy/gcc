@@ -1344,6 +1344,10 @@ Wredundant-policy
 C++ ObjC++ Var(warn_redundant_policy) Warning LangEnabledBy(C++ ObjC++,Wpedantic)
 Warn when activating a policy that is already active, or suppressing a policy that is not active.
 
+Wunknown-policy
+C++ ObjC++ Var(warn_unknown_policy) Init(1) Warning
+Warn when activating or suppressing a policy that is still not known at the end of the translation unit.
+
 Wredundant-tags
 C++ ObjC++ Var(warn_redundant_tags) Warning
 Warn when a class or enumerated type is referenced using a redundant class-key.

@@ -15104,11 +15104,9 @@ cp_parser_policy_change (tree name, tree args, bool active, location_t loc,
       return;
     }
   tree group = TREE_VALUE (args);
+  /* The group can still become known later in the translation unit.  */
   if (!policy_known_p (group))
-    {
-      error_at (loc, "unknown policy %qE", group);
-      return;
-    }
+    policy_note_unknown (group, active, loc);
   if (policy_redundant_p (group, active, loc))
     warning_at (loc, OPT_Wredundant_policy,
 		active ? G_("policy %qE is already active")

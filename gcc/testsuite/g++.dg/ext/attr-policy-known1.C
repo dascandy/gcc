@@ -1,6 +1,7 @@
 // { dg-do compile { target c++17 } }
-// Only known policies can be activated or suppressed: the predefined ones,
-// and those that something was removed under.
+// The known policies are the predefined ones, and those that something was
+// removed under.  A policy that is still not known at the end of the
+// translation unit gets a warning, once, at its first use.
 
 // Predefined.
 [[policy::activate(no_empty_statement)]];
@@ -36,9 +37,9 @@
 [[policy::activate(dynamic_cast)]];
 [[policy::suppress(dynamic_cast)]];
 
-// Not known yet.
-[[policy::activate(core)]];			// { dg-error "unknown policy 'core'" }
-[[policy::suppress(core)]];			// { dg-error "unknown policy 'core'" }
+// Not known yet, but known by the end of the translation unit.
+[[policy::activate(core)]];
+[[policy::suppress(core)]];
 
 [[policy::remove(core)]] void f ();
 [[policy::activate(core)]];
@@ -51,14 +52,14 @@ struct [[policy::remove(cls)]] C {};
 
 // An ignored removal does not make a policy known.
 [[policy::remove(ignored)]] extern int e;	// { dg-warning "only applies to" }
-[[policy::activate(ignored)]];			// { dg-error "unknown policy 'ignored'" }
+[[policy::activate(ignored)]];			// { dg-warning "unknown policy 'ignored'" }
 
 void
 g ()
 {
-  [[policy::activate(never)]];			// { dg-error "unknown policy 'never'" }
+  [[policy::activate(never)]];			// { dg-warning "unknown policy 'never'" }
   {
-    [[policy::suppress(never)]];		// { dg-error "unknown policy 'never'" }
+    [[policy::suppress(never)]];
   }
   [[policy::activate(core)]];
 }
@@ -67,6 +68,6 @@ template <typename T>
 void
 t ()
 {
-  [[policy::activate(never)]];			// { dg-error "unknown policy 'never'" }
+  [[policy::activate(never)]];
 }
 template void t<int> ();

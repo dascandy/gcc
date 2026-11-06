@@ -84,7 +84,7 @@ redundant ()
 [[policy::define(bad3, core, core)]];	// { dg-error "policy 'core' is listed more than once in the definition of 'bad3'" }
 [[policy::define(bad4, core, extra, core)]];	// { dg-error "policy 'core' is listed more than once" }
 [[policy::define(bad5, safe, strict, safe)]];	// { dg-error "policy 'safe' is listed more than once" }
-[[policy::activate(bad3)]];		// { dg-error "unknown policy 'bad3'" }
+[[policy::activate(bad3)]];		// { dg-warning "unknown policy 'bad3'" }
 [[policy::define]];			// { dg-error "requires a policy group name and at least one policy group" }
 [[policy::define(bad6)]];		// { dg-error "requires a policy group name and at least one policy group" }
 [[policy::define()]];			// { dg-error "requires policy group names" }

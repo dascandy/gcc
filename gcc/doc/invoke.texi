@@ -308,8 +308,8 @@ in the following sections.
 -Wsized-deallocation  -Wsuggest-final-methods
 -Wsuggest-final-types  -Wsuggest-override  -Wno-template-body
 -Wno-template-id-cdtor  -Wtemplate-names-tu-local
--Wno-terminate  -Wno-vexing-parse  -Wvirtual-inheritance
--Wno-virtual-move-assign  -Wvolatile}
+-Wno-terminate  -Wno-unknown-policy  -Wno-vexing-parse
+-Wvirtual-inheritance  -Wno-virtual-move-assign  -Wvolatile}
 
 @item Objective-C and Objective-C++ Language Options
 @xref{Objective-C and Objective-C++ Dialect Options,,Options Controlling
@@ -5163,6 +5163,22 @@ void f ()
 @end smallexample
 
 This warning is enabled by @option{-Wpedantic}.
+
+@opindex Wunknown-policy
+@opindex Wno-unknown-policy
+@item -Wno-unknown-policy @r{(C++ and Objective-C++ only)}
+Do not warn when a @code{[[policy::activate(@var{group})]]} or
+@code{[[policy::suppress(@var{group})]]} attribute names a policy group that
+is still not known at the end of the translation unit: one that is not
+predefined, not named by a @code{[[policy::remove]]} attribute and not
+defined by @code{[[policy::define]]}.  A group can be activated or
+suppressed before the declaration that makes it known, for example one in a
+header included later, so this is only decided at the end of the
+translation unit.  The warning is given once for each such group, at its
+first use, and suggests a known group with a similar name, if any.  It
+usually means that the name is misspelled.
+
+This warning is enabled by default.
 
 @opindex Wredundant-tags
 @opindex Wno-redundant-tags
