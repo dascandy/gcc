@@ -2284,15 +2284,7 @@ policy_change_applies_p (tree changed, tree group)
   return expansion && value_member (group, expansion);
 }
 
-/* Return true if policy GROUP is in the active set.
-
-   Activating a policy may only make well-formed code ill-formed; it must
-   never change what well-formed code means.  Callers of this function, and
-   of the functions built on it, may therefore only use the result to decide
-   whether to emit a diagnostic.  They must not use it to change the trees
-   being built, the result of name lookup or overload resolution, or whether
-   a substitution fails: in particular they must not return error_mark_node
-   or fail a substitution because a policy is active.  */
+/* Return true if policy GROUP is in the active set.  */
 
 bool
 policy_active_p (tree group)
