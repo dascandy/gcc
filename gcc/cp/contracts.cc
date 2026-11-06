@@ -213,6 +213,45 @@ diagnose_contract_mismatch (tree old_contract, tree new_contract,
   return true;
 }
 
+/* Compare the `policy (group)' terms of OLD_CONTRACT and NEW_CONTRACT,
+   which must name the same groups, in any order, each active at both
+   assertions or at neither.  Diagnose a difference and return true, or
+   return false if there is none.  */
+
+static bool
+contract_policy_labels_mismatch_p (tree old_contract, tree new_contract)
+{
+  tree old_labels = CONTRACT_POLICY_LABELS (old_contract);
+  tree new_labels = CONTRACT_POLICY_LABELS (new_contract);
+  for (int pass = 0; pass < 2; ++pass)
+    for (tree t = pass ? new_labels : old_labels; t; t = TREE_CHAIN (t))
+      {
+	tree other = purpose_member (TREE_PURPOSE (t),
+				     pass ? old_labels : new_labels);
+	if (!other)
+	  return diagnose_contract_mismatch
+	    (old_contract, new_contract,
+	     G_("mismatched assertion-control-specifier in declaration"));
+	if (!pass && TREE_VALUE (other) != TREE_VALUE (t))
+	  {
+	    auto_diagnostic_group d;
+	    error_at (EXPR_LOCATION (new_contract),
+		      "mismatched assertion-control-specifier in "
+		      "declaration");
+	    inform (EXPR_LOCATION (new_contract),
+		    TREE_VALUE (other) == boolean_true_node
+		    ? G_("policy %qE is active here")
+		    : G_("policy %qE is not active here"), TREE_PURPOSE (t));
+	    inform (EXPR_LOCATION (old_contract),
+		    TREE_VALUE (t) == boolean_true_node
+		    ? G_("but is active at the previous contract")
+		    : G_("but is not active at the previous contract"));
+	    return true;
+	  }
+      }
+  return false;
+}
+
 /* Compare the contract conditions of OLD_CONTRACT and NEW_CONTRACT.
    Returns false if the conditions are equivalent, and true otherwise.  */
 
@@ -298,6 +337,12 @@ mismatched_contracts_p (tree old_contract, tree new_contract)
     return diagnose_contract_mismatch
       (old_contract, new_contract,
        G_("mismatched assertion-control-specifier in declaration"));
+
+  /* Both have the same `policy (group)' terms, in any order, and each was
+     active at both or at neither: whether it was decides the semantics the
+     assertion may use.  */
+  if (contract_policy_labels_mismatch_p (old_contract, new_contract))
+    return true;
 
   /* Compare assertion-control labels (P3400).  Both must specify the same
      label, or neither specifies one.  */
