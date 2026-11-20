@@ -3530,9 +3530,17 @@ optimization.  With @option{-finstrument-functions} or @option{-pg}, only
 the second entry point is instrumented.
 
 Postcondition captures are initialized at the second entry point, after all
-the preconditions have been checked.  When the second entry point cannot
-be split off -- the preconditions are all ignored in this translation
-unit, or the body cannot be copied -- it is an alias of the first, or a
+the preconditions have been checked.  The second entry point may assume
+each precondition that the first enforces (with @code{enforce},
+@code{quick_enforce} or @code{noexcept_enforce}) or assumes, since every
+way into it checks that precondition first; a predicate that calls a
+function is assumed there only if the first entry point assumes it, and
+not under @option{-fcontracts-p4405}.
+
+When the second entry point cannot be split off -- the preconditions are
+all ignored in this translation unit, the body cannot be copied, or it
+holds @option{-fcontracts-p4405} analysis evaluations, which belong to the
+function they are proven in -- it is an alias of the first, or a
 function that forwards to the first where the target has no aliases, and
 runs the same precondition checks as the first.  A C-variadic function
 keeps its whole body at the first entry point and gets a copy of it,

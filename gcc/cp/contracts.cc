@@ -6552,6 +6552,7 @@ wrap_postconditions_in_retval_cleanup (tree fndecl, tree stmts)
    post-condition checker.  */
 
 static void add_postcheck_marker ();
+static void add_postcheck_premises (tree);
 static bool postcheck_split_body_p (tree);
 
 void
@@ -6721,7 +6722,10 @@ maybe_apply_function_contracts (tree fndecl)
     {
       apply_preconditions (fndecl);
       if (postcheck_split)
-	add_postcheck_marker ();
+	{
+	  add_postcheck_marker ();
+	  add_postcheck_premises (fndecl);
+	}
       add_stmt (fnbody);
       finish_compound_stmt (compound_stmt);
       return;
@@ -6744,6 +6748,7 @@ maybe_apply_function_contracts (tree fndecl)
     {
       apply_preconditions (fndecl);
       add_postcheck_marker ();
+      add_postcheck_premises (fndecl);
     }
   if (flag_contract_checks_outlined)
     {
@@ -16097,6 +16102,66 @@ add_postcheck_marker ()
   add_stmt (build_stmt (UNKNOWN_LOCATION, LABEL_EXPR, label));
 }
 
+/* After the marker, the precondition checks of FNDECL that hold wherever
+   the postcheck entry point is entered from, as optimizer assumptions: the
+   ones the function itself checks with a semantic that does not let it
+   proceed after a violation, or assumes.  A caller that calls the
+   postcheck entry point has checked all of them that way
+   (wrapper_calls_postcheck_entry_p).  Without them, the body would lose
+   the premises that follow from the checks ahead of it.  A predicate that
+   makes a call is assumed only if the function assumes it.  */
+
+static tree
+postcheck_premise_call_r (tree *tp, int *walk_subtrees, void *)
+{
+  if (TYPE_P (*tp))
+    *walk_subtrees = 0;
+  else if (TREE_CODE (*tp) == CALL_EXPR
+	   || TREE_CODE (*tp) == AGGR_INIT_EXPR
+	   || TREE_CODE (*tp) == TARGET_EXPR)
+    return *tp;
+  return NULL_TREE;
+}
+
+static void
+add_postcheck_premises (tree fndecl)
+{
+  tree copies = copy_contracts (fndecl, cmk_pre);
+  if (!copies)
+    return;
+  for (tree contract : tree_vec_range (copies))
+    {
+      if (!PRECONDITION_P (contract)
+	  || !contract_valid_p (contract)
+	  || contract_dynamic_name (contract))
+	continue;
+      contract_evaluation_semantic sem
+	= ensure_evaluation_semantic (contract, fndecl, false);
+      switch (sem)
+	{
+	case CES_ENFORCE:
+	case CES_QUICK:
+	case CES_NOEXCEPT_ENFORCE:
+	case CES_ASSUME:
+	  break;
+	default:
+	  continue;
+	}
+      /* A predicate that calls a function is outlined into a function of
+	 its own, and under D4405 its calls' preconditions would be analyzed
+	 again; assume one only where the function assumes it too.  */
+      if ((sem != CES_ASSUME || flag_contracts_p4405)
+	  && (TREE_SIDE_EFFECTS (CONTRACT_CONDITION (contract))
+	      || cp_walk_tree_without_duplicates (&CONTRACT_CONDITION (contract),
+						  postcheck_premise_call_r,
+						  NULL)))
+	continue;
+      CONTRACT_EVALUATION_SEMANTIC (contract)
+	= build_contract_semantic_slot (CES_ASSUME, CES_IGNORE);
+      emit_contract_statement (contract);
+    }
+}
+
 /* Give P the parameters and result of F as they are now, recording each
    pair in DECL_MAP if non-null.  */
 
@@ -16371,6 +16436,28 @@ make_postcheck_alias (tree p, tree f, tree target)
   expand_or_defer_fn_1 (p);
 }
 
+/* Helper for contract_split_postcheck_entry.  */
+
+static tree
+contract_analysis_call_r (tree *tp, int *walk_subtrees, void *)
+{
+  if (TYPE_P (*tp))
+    *walk_subtrees = 0;
+  else if (TREE_CODE (*tp) == CALL_EXPR && !CALL_EXPR_FN (*tp))
+    switch (CALL_EXPR_IFN (*tp))
+      {
+      case IFN_CONTRACT_PENDING_ANALYSIS:
+      case IFN_CONTRACT_SHADOW_GUARD:
+      case IFN_CONTRACT_UNPROVEN:
+      case IFN_CONTRACT_ASSUMPTION:
+      case IFN_CONTRACT_PROVEN:
+	return *tp;
+      default:
+	break;
+      }
+  return NULL_TREE;
+}
+
 /* FN, a function with a postcheck entry point, has been genericized and is
    about to be handed to the middle end: give the postcheck entry point its
    definition, and FN its final body.  */
@@ -16394,7 +16481,13 @@ contract_split_postcheck_entry (tree fn)
 
   tree_stmt_iterator mit;
   bool marker = find_postcheck_marker (DECL_SAVED_TREE (fn), &mit) != NULL;
-  bool copyable = !copy_forbidden (DECL_STRUCT_FUNCTION (fn));
+  /* The D4405 analysis evaluations in the body are numbered for FN and
+     proven or diagnosed in it (contracts-shadow.cc), so such a body stays
+     whole.  */
+  bool copyable = (!copy_forbidden (DECL_STRUCT_FUNCTION (fn))
+		   && !walk_tree_without_duplicates (&DECL_SAVED_TREE (fn),
+						     contract_analysis_call_r,
+						     NULL));
   bool variadic = stdarg_p (TREE_TYPE (fn));
   enum { SPLIT, COPY, ALIAS, FORWARD } mode;
   if (!marker || !copyable)
