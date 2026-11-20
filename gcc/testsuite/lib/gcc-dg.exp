@@ -1443,7 +1443,7 @@ proc scan-symbol-common { scan_directive args } {
 # Argument 1 handles expected failures and the like
 proc scan-symbol { args } {
     set testcase [testname-for-summary]
-    if { [scan-symbol-common "scan-symbol" $args]} {
+    if { [scan-symbol-common "scan-symbol" {*}$args]} {
 	pass "$testcase   scan-symbol $args"
     } else {
 	fail "$testcase   scan-symbol $args"
@@ -1457,7 +1457,7 @@ proc scan-symbol { args } {
 # Argument 1 handles expected failures and the like
 proc scan-symbol-not { args } {
     set testcase [testname-for-summary]
-    if { [scan-symbol-common "scan-symbol-not" $args]} {
+    if { [scan-symbol-common "scan-symbol-not" {*}$args]} {
 	fail "$testcase   scan-symbol-not $args"
     } else {
 	pass "$testcase   scan-symbol-not $args"
