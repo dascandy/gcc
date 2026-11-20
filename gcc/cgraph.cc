@@ -2338,6 +2338,14 @@ cgraph_node::remove (void)
   ipa_transforms_to_apply.release ();
   delete_function_version (function_version ());
 
+  /* Neither function of a fall-through pair constrains the other once one
+     of them is gone.  */
+  if (layout_predecessor)
+    layout_predecessor->layout_successor = NULL;
+  if (layout_successor)
+    layout_successor->layout_predecessor = NULL;
+  layout_predecessor = layout_successor = NULL;
+
   /* Incremental inlining access removed nodes stored in the postorder list.
      */
   force_output = false;
@@ -2844,6 +2852,21 @@ cgraph_function_possibly_inlined_p (tree decl)
   if (!symtab->global_info_ready)
     return !DECL_UNINLINABLE (decl);
   return DECL_POSSIBLY_INLINED (decl);
+}
+
+/* Make SUCC the function output immediately after this one: this function
+   ends in a jump to SUCC that a later pass may turn into a fall-through
+   where the two end up in the same section.  Each keeps the section it
+   would have had anyway.  */
+
+void
+cgraph_node::set_layout_successor (cgraph_node *succ)
+{
+  gcc_checking_assert (succ != this
+		       && !layout_successor
+		       && !succ->layout_predecessor);
+  layout_successor = succ;
+  succ->layout_predecessor = this;
 }
 
 /* Return true if FNDECL carries the internal "refinable body" attribute:

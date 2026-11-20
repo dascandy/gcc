@@ -937,7 +937,8 @@ struct GTY((tag ("SYMTAB_FUNCTION"))) cgraph_node : public symtab_node
       next_sibling_clone (NULL), prev_sibling_clone (NULL), clones (NULL),
       clone_of (NULL), call_site_hash (NULL), former_clone_of (NULL),
       simdclone (NULL), simd_clones (NULL), ipa_transforms_to_apply (vNULL),
-      inlined_to (NULL), rtl (NULL),
+      inlined_to (NULL), layout_predecessor (NULL), layout_successor (NULL),
+      rtl (NULL),
       count (profile_count::uninitialized ()),
       count_materialization_scale (REG_BR_PROB_BASE), profile_id (0),
       unit_id (0), tp_first_run (0), thunk (false),
@@ -966,6 +967,10 @@ struct GTY((tag ("SYMTAB_FUNCTION"))) cgraph_node : public symtab_node
   /* Record all references from cgraph_node that are taken
      in statement STMT.  */
   void record_stmt_references (gimple *stmt);
+
+  /* Make SUCC the function output immediately after this one
+     (layout_successor).  */
+  void set_layout_successor (cgraph_node *succ);
 
   /* Like cgraph_set_call_stmt but walk the clone tree and update all
      clones sharing the same function body.
@@ -1510,6 +1515,18 @@ struct GTY((tag ("SYMTAB_FUNCTION"))) cgraph_node : public symtab_node
   /* For inline clones this points to the function they will be
      inlined into.  */
   cgraph_node *inlined_to;
+
+  /* A function that falls through into another one: LAYOUT_PREDECESSOR is
+     set on the function that is output immediately after it, and
+     LAYOUT_SUCCESSOR on the function that is output immediately before
+     it.  The predecessor ends in a jump to its successor, which a later
+     pass may remove where the two share a section.  The link never moves
+     either function into the other's section, so that the linker can
+     still discard each one on its own.  The predecessor's call of the
+     successor is never inlined (can_inline_edge_p).  See
+     set_layout_successor.  */
+  cgraph_node *layout_predecessor;
+  cgraph_node *layout_successor;
 
   struct cgraph_rtl_info *rtl;
 

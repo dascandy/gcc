@@ -144,6 +144,10 @@ DEFCIFCODE(EXTERN_LIVE_ONLY_STATIC, CIF_FINAL_ERROR,
 DEFCIFCODE(MUST_REMAIN_IN_TU, CIF_FINAL_ERROR,
 	   N_("callee must remain in translation unit"))
 
+/* The caller is laid out to fall through into the callee.  */
+DEFCIFCODE(LAYOUT_FALL_THROUGH, CIF_FINAL_NORMAL,
+	   N_("caller falls through into the callee"))
+
 /* We proved that the call is unreachable.  */
 DEFCIFCODE(UNREACHABLE, CIF_FINAL_ERROR,
 	   N_("unreachable"))

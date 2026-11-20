@@ -116,6 +116,7 @@
 #include "fibonacci_heap.h"
 #include "stringpool.h"
 #include "attribs.h"
+#include "cgraph.h"
 #include "common/common-target.h"
 
 /* The number of rounds.  In most cases there will only be 4 rounds, but
@@ -2641,6 +2642,53 @@ insert_section_boundary_note (void)
   crtl->has_bb_partition = switched_sections;
 }
 
+/* If FUN falls through into another function (the layout successor of
+   its cgraph node), move the block that ends in its sibling call of that
+   function to the end of the block's partition, so that the call is the
+   last instruction there and a later pass can drop it and let execution
+   fall through.  FUN is in cfglayout mode, so the jumps that the move
+   needs are added when it is left.  */
+
+static void
+place_layout_fall_through_last (function *fun)
+{
+  cgraph_node *node = cgraph_node::get (fun->decl);
+  if (!node || !node->layout_successor)
+    return;
+  tree succ = node->layout_successor->decl;
+
+  basic_block call_bb = NULL;
+  basic_block bb;
+  FOR_EACH_BB_FN (bb, fun)
+    {
+      rtx_insn *insn = BB_END (bb);
+      while (insn != BB_HEAD (bb) && !INSN_P (insn))
+	insn = PREV_INSN (insn);
+      if (!CALL_P (insn) || !SIBLING_CALL_P (insn))
+	continue;
+      rtx call = get_call_rtx_from (insn);
+      if (!call)
+	continue;
+      rtx addr = XEXP (XEXP (call, 0), 0);
+      if (GET_CODE (addr) == SYMBOL_REF && SYMBOL_REF_DECL (addr) == succ)
+	{
+	  call_bb = bb;
+	  break;
+	}
+    }
+  if (!call_bb)
+    return;
+
+  basic_block last = NULL;
+  FOR_EACH_BB_FN (bb, fun)
+    if (BB_PARTITION (bb) == BB_PARTITION (call_bb))
+      last = bb;
+  if (last == call_bb)
+    return;
+  unlink_block (call_bb);
+  link_block (call_bb, last);
+}
+
 namespace {
 
 const pass_data pass_data_reorder_blocks =
@@ -2687,6 +2735,7 @@ pass_reorder_blocks::execute (function *fun)
 
   reorder_basic_blocks ();
   cleanup_cfg (CLEANUP_EXPENSIVE | CLEANUP_NO_PARTITIONING);
+  place_layout_fall_through_last (fun);
 
   FOR_EACH_BB_FN (bb, fun)
     if (bb->next_bb != EXIT_BLOCK_PTR_FOR_FN (fun))

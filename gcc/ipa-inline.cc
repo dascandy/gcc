@@ -434,6 +434,13 @@ can_inline_edge_p (struct cgraph_edge *e, bool report,
       e->inline_failed = CIF_UNSPECIFIED;
       inlinable = false;
     }
+  /* A function laid out to fall through into the function it calls keeps
+     that call (cgraph_node::layout_successor).  */
+  else if (callee->layout_predecessor == caller)
+    {
+      e->inline_failed = CIF_LAYOUT_FALL_THROUGH;
+      inlinable = false;
+    }
   /* Check compatibility of target optimization options.  */
   else if (!targetm.target_option.can_inline_p (caller->decl,
 						callee->decl))

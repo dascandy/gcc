@@ -1985,6 +1985,35 @@ tp_first_run_node_cmp (const void *pa, const void *pb)
   return tp_first_run_a - tp_first_run_b;
 }
 
+/* Expand NODE, together with the function that falls through into it and
+   the one it falls through into (cgraph_node::layout_successor) if those are
+   still to be output, so that they come out one right after the other.
+   Return the number of functions expanded.  */
+
+static int
+expand_in_layout_order (cgraph_node *node)
+{
+  int expanded = 0;
+  cgraph_node *pred = node->layout_predecessor;
+  if (pred && pred->process && !pred->gc_candidate)
+    {
+      pred->process = 0;
+      pred->expand ();
+      expanded++;
+    }
+  node->process = 0;
+  node->expand ();
+  expanded++;
+  cgraph_node *succ = node->layout_successor;
+  if (succ && succ->process && !succ->gc_candidate)
+    {
+      succ->process = 0;
+      succ->expand ();
+      expanded++;
+    }
+  return expanded;
+}
+
 /* Expand all functions that must be output.
 
    Attempt to topologically sort the nodes so function is output when
@@ -2038,8 +2067,7 @@ expand_all_functions (void)
 	    fprintf (symtab->dump_file,
 		     "Time profile order in expand_all_functions:%s:%d\n",
 		     node->dump_asm_name (), node->tp_first_run);
-	  node->process = 0;
-	  node->expand ();
+	  expanded_func_count += expand_in_layout_order (node) - 1;
 	}
     }
 
@@ -2060,11 +2088,7 @@ expand_all_functions (void)
 	  if (node->gc_candidate)
 	    gc_candidates++;
 	  else if (node->process)
-	    {
-	      expanded_func_count++;
-	      node->process = 0;
-	      node->expand ();
-	    }
+	    expanded_func_count += expand_in_layout_order (node);
 	}
       if (!gc_candidates || gc_candidates == prev_gc_candidates)
 	break;
@@ -2161,8 +2185,9 @@ cgraph_order_sort::process ()
   switch (kind)
     {
     case ORDER_FUNCTION:
-      u.f->process = 0;
-      u.f->expand ();
+      /* Already output with the function it falls through from or into.  */
+      if (u.f->process)
+	expand_in_layout_order (u.f);
       break;
     case ORDER_VAR:
       u.v->assemble_decl ();
