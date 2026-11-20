@@ -3593,9 +3593,22 @@ it is an error to use this option unless
 @option{-fcontract-evaluation-semantic=} is @code{enforce} (the default),
 @code{quick_enforce} or @code{noexcept_enforce}.
 
-Beyond @option{-fcontract-postcheck-entry}, this option currently enables
-no optimizations.  It has no effect without @option{-fcontracts}.  The
-name of this option is preliminary and may change.
+This option enables the following optimizations:
+
+@itemize @bullet
+@item
+After the call, a caller that checks a function's preconditions assumes
+each postcondition of the function that it does not check itself, as
+@code{[[assume (@var{predicate})]]} would.  This applies to postconditions
+that the function itself enforces (with @code{enforce},
+@code{quick_enforce} or @code{noexcept_enforce}) or assumes, with an
+evaluation semantic chosen at compile time.  It does not apply to a
+postcondition with captures, a call through a function pointer, or a
+virtual call.
+@end itemize
+
+It has no effect without @option{-fcontracts}.  The name of this option is
+preliminary and may change.
 
 @opindex fcontract-analysis-semantic
 @item -fcontract-analysis-semantic=@var{semantic}

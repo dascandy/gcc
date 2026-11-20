@@ -8178,6 +8178,56 @@ retarget_wrapper_call (tree wrapdecl, tree from, tree to)
   gcc_checking_assert (found);
 }
 
+/* -ffast-contracts: true if CONTRACT, one of the contracts of FNDECL, is a
+   postcondition that holds whenever FNDECL returns normally, so that a
+   caller-side wrapper may assume it after the call.  That is so when the
+   callee-side evaluation of CONTRACT has a semantic, chosen at compile
+   time, that does not let FNDECL return after a violation -- enforce,
+   quick_enforce or noexcept_enforce -- or assumes it.  The semantic is
+   resolved in this translation unit; -ffast-contracts promises that the one
+   that defines FNDECL resolves it the same way.  A postcondition with
+   captures is left out: assuming it would need them initialized in the
+   wrapper.  */
+
+static bool
+fast_contracts_assumed_post_p (tree contract, tree fndecl)
+{
+  if (!POSTCONDITION_P (contract)
+      || POSTCONDITION_CAPTURES (contract)
+      || CONTRACT_CONDITION (contract) == error_mark_node)
+    return false;
+  contract_evaluation_semantic sem
+    = ensure_evaluation_semantic (contract, fndecl, /*in_ce=*/false);
+  if (contract_dynamic_name (contract))
+    return false;
+  switch (sem)
+    {
+    case CES_ENFORCE:
+    case CES_QUICK:
+    case CES_NOEXCEPT_ENFORCE:
+    case CES_ASSUME:
+      return true;
+    default:
+      return false;
+    }
+}
+
+/* -ffast-contracts: true if WRAPDECL, a caller-side contract wrapper of
+   FNDECL that is not for a virtual call, assumes the postcondition at
+   POSITION of FNDECL's contracts, CONTRACT, after the call: the wrapper does
+   not check it itself and the callee does (fast_contracts_assumed_post_p).
+   The assumption is lowered as [[assume]] lowers its own.  */
+
+static bool
+wrapper_assumes_post_p (tree wrapdecl, tree fndecl, unsigned position,
+			tree contract)
+{
+  return (flag_fast_contracts
+	  && !get_wrapper_dyn_at (wrapdecl, position)
+	  && get_wrapper_tuple_at (wrapdecl, position) == CES_IGNORE
+	  && fast_contracts_assumed_post_p (contract, DECL_ORIGIN (fndecl)));
+}
+
 /* Define a single wrapper function WRAPDECL that wraps callee FNDECL.
    This generates code for client-side contract check wrappers and the
    noexcept wrapper around the contract violation handler.  Returns true
@@ -8244,14 +8294,43 @@ define_one_contract_wrapper_func (tree fndecl, tree wrapdecl)
 	      check_post = true;
 	      break;
 	    }
+	  if (wrapper_assumes_post_p (wrapdecl, fndecl, position, contract))
+	    {
+	      check_post = true;
+	      break;
+	    }
 	}
     }
 
   /* For wrappers on CDTORs we need to refer to the original contracts,
      when the wrapper is around a clone.  */
-  set_fn_contract_specifiers (wrapdecl,
-		    copy_and_remap_contracts (wrapdecl, DECL_ORIGIN (fndecl),
-					     check_post ? cmk_all : cmk_pre));
+  tree wrap_specs = copy_and_remap_contracts (wrapdecl, DECL_ORIGIN (fndecl),
+					      check_post ? cmk_all : cmk_pre);
+  set_fn_contract_specifiers (wrapdecl, wrap_specs);
+
+  /* -ffast-contracts: after the call, the wrapper assumes each
+     postcondition that it does not check and the callee does, as
+     [[assume (P)]] would; see wrapper_assumes_post_p.  With every
+     postcondition copied, the copies are at the positions of the
+     originals.  Constant evaluation leaves the postcondition to the
+     callee.  */
+  if (flag_fast_contracts && !is_virtual && check_post && wrap_specs
+      && !contract_any_deferred_p (wrap_specs))
+    {
+      tree specs = get_fn_contract_specifiers (DECL_ORIGIN (fndecl));
+      gcc_checking_assert (TREE_VEC_LENGTH (specs)
+			   == TREE_VEC_LENGTH (wrap_specs));
+      for (int position = 0; position < TREE_VEC_LENGTH (specs); position++)
+	if (wrapper_assumes_post_p (wrapdecl, fndecl, position,
+				    TREE_VEC_ELT (specs, position)))
+	  {
+	    tree copy = TREE_VEC_ELT (wrap_specs, position);
+	    CONTRACT_EVALUATION_SEMANTIC (copy)
+	      = build_int_cst (uint16_type_node, CES_ASSUME);
+	    CONTRACT_CONSTEXPR_EVALUATION_SEMANTIC (copy)
+	      = build_int_cst (uint16_type_node, CES_IGNORE);
+	  }
+    }
 
   /* P4298: unlike build_contract_condition_function's outlined .pre/.post
      functions (which contain nothing but contract-check code), WRAPDECL
