@@ -3624,7 +3624,8 @@ preconditions checked with @code{enforce}, @code{quick_enforce} or
 @code{noexcept_enforce} count.  Where the function widens the
 preconditions of every function it overrides, its own checks of them can
 be removed.  A function or destructor that has no enforced preconditions
-of its own, or that overrides one without, assumes nothing.
+of its own, or that overrides one without, assumes nothing, and neither
+does a coroutine or a C-variadic function.
 
 @item
 With @option{-fcontracts-p3097}, a function that overrides others, other

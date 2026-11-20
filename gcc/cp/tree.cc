@@ -6342,7 +6342,7 @@ make_ptrmem_cst (tree type, tree member)
      with a precondition points to, created now, to be defined with the
      other contract wrappers.  */
   if (TREE_CODE (member) == FUNCTION_DECL && DECL_VIRTUAL_P (member))
-    contract_pmf_thunk (member);
+    contract_pmf_thunk (member, /*lowering=*/false);
   return ptrmem_cst;
 }
 

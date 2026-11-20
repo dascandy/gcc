@@ -5112,8 +5112,18 @@ get_or_create_contract_wrapper_function (tree fndecl, tree tuple)
 
 static GTY(()) hash_map<tree, tree, pch_traits> *pmf_thunks = nullptr;
 
+/* True once the contract wrappers have been emitted for the last time
+   (emit_contract_wrapper_func), after which a new one would never be
+   defined.  */
+
+static bool contract_wrappers_emitted;
+
+/* LOWERING is true if the thunk is wanted for a pointer to member being
+   lowered, which then points to it; false if one is being made, which may
+   never be.  */
+
 tree
-contract_pmf_thunk (tree fn)
+contract_pmf_thunk (tree fn, bool lowering)
 {
   if (TREE_CODE (fn) != FUNCTION_DECL
       || !DECL_VIRTUAL_P (fn)
@@ -5131,6 +5141,15 @@ contract_pmf_thunk (tree fn)
 	pre = true;
   if (!pre)
     return NULL_TREE;
+  if (contract_wrappers_emitted)
+    {
+      /* Never: the pointers to member in variables' initializers, which
+	 are lowered last, had their thunks made before
+	 (request_pmf_thunks_for_variables).  A pointer lowered now would
+	 point to a thunk with no definition.  */
+      gcc_assert (!lowering);
+      return NULL_TREE;
+    }
   tree thunk = get_or_create_contract_wrapper_function (fn, NULL_TREE);
   if (!thunk || thunk == error_mark_node)
     return NULL_TREE;
@@ -8743,9 +8762,44 @@ count_wrapper_pairs (void)
    possible additional instantiations should be considered.
    Once instantiations are complete, this will be called with done == true.  */
 
+/* cp_walk_tree callback for request_pmf_thunks_for_variables.  */
+
+static tree
+request_pmf_thunk_r (tree *tp, int *walk_subtrees, void *)
+{
+  if (TYPE_P (*tp))
+    *walk_subtrees = 0;
+  else if (TREE_CODE (*tp) == PTRMEM_CST
+	   && TREE_CODE (PTRMEM_CST_MEMBER (*tp)) == FUNCTION_DECL)
+    contract_pmf_thunk (PTRMEM_CST_MEMBER (*tp), /*lowering=*/false);
+  return NULL_TREE;
+}
+
+/* -ffast-contracts with P3097: make the thunks the pointers to member in
+   variables' initializers point to (contract_pmf_thunk), so that they are
+   defined with the other wrappers.  Those initializers are lowered only
+   after the wrappers have been emitted (lower_var_init), and a pointer to
+   a virtual function made before its class was complete, when the
+   function was not known to be virtual, had none made for it.  */
+
+static void
+request_pmf_thunks_for_variables ()
+{
+  if (!flag_fast_contracts || !flag_contracts_p3097 || flag_contracts_p4405)
+    return;
+  varpool_node *node;
+  FOR_EACH_VARIABLE (node)
+    if (tree init = DECL_INITIAL (node->decl))
+      if (init != error_mark_node)
+	cp_walk_tree_without_duplicates (&init, request_pmf_thunk_r, NULL);
+}
+
 bool
 emit_contract_wrapper_func (bool done)
 {
+  request_pmf_thunks_for_variables ();
+  if (done)
+    contract_wrappers_emitted = true;
   if (!decl_wrapper_fn || decl_wrapper_fn->is_empty ())
     return false;
   size_t start_pairs = count_wrapper_pairs ();
@@ -16427,7 +16481,6 @@ begin_fast_virtual (tree fndecl)
       || flag_syntax_only
       || processing_template_decl
       || DECL_CLONED_FUNCTION_P (fndecl)
-      || DECL_COROUTINE_P (fndecl)
       || CONTRACT_HELPER (fndecl) != ldf_contract_none
       || DECL_IS_WRAPPER_FN_P (fndecl))
     return NULL;
@@ -16443,7 +16496,11 @@ begin_fast_virtual (tree fndecl)
      from one it overrides, does not check their preconditions
      (contract_pmf_thunk).  */
   bool own = false;
-  if (handle_contracts_p (fndecl) && !stdarg_p (TREE_TYPE (fndecl)))
+  /* Nor is a coroutine, whose preconditions are checked at the start of
+     its ramp, made one, though it checks the postconditions of the
+     functions it overrides like any other function.  */
+  if (handle_contracts_p (fndecl) && !stdarg_p (TREE_TYPE (fndecl))
+      && !DECL_COROUTINE_P (fndecl))
     if (tree specs = get_fn_contract_specifiers (fndecl))
       for (tree c : tree_vec_range (specs))
 	if (PRECONDITION_P (c) && fast_contracts_enforced_p (c, fndecl))
@@ -16470,6 +16527,13 @@ begin_fast_virtual (tree fndecl)
       if (iface.this_expr == error_mark_node
 	  || (specs && contract_any_deferred_p (specs)))
 	{
+	  /* Never: B::f's class is a complete base of F's, reached through
+	     a single subobject (collect_overridden_functions), so its
+	     contracts are parsed and `this' converts.  Were it to happen,
+	     B::f's postconditions, which a virtual call through B::f
+	     assumes, would go unchecked.  A destructor checks none of
+	     them.  */
+	  gcc_assert (!post_ok);
 	  fv->assume = false;
 	  continue;
 	}
@@ -16628,14 +16692,15 @@ fast_virtual_entry (fast_virtual *fv)
 	    {
 	      if (!result)
 		result = fast_virtual_result (fv, iface);
-	      /* Never for a return type an override can have.  */
-	      if (!result)
-		continue;
+	      /* Never: an override's return type is B::f's or converts to it
+		 (covariant).  B::f's postcondition, which a virtual call
+		 through B::f assumes, would otherwise go unchecked.  */
+	      gcc_assert (result);
 	      parms.put (r, result);
 	    }
 	  tree pred = fast_virtual_rewrite (c, iface.this_expr, parms);
-	  if (!pred)
-	    continue;
+	  /* Never: fast_contracts_transferable_p allowed it.  */
+	  gcc_assert (pred);
 	  tree check = copy_node (c);
 	  CONTRACT_CONDITION (check)
 	    = (via

@@ -4637,7 +4637,7 @@ get_member_function_from_ptrfunc (tree *instance_ptrptr, tree function,
 		 pmf constants.  */
 	      tree member = PTRMEM_CST_MEMBER (function);
 	      /* -ffast-contracts with P3097: what the pointer points to.  */
-	      if (tree thunk = contract_pmf_thunk (member))
+	      if (tree thunk = contract_pmf_thunk (member, /*lowering=*/true))
 		member = thunk;
 	      e1 = build_addr_func (member, complain);
 	      e1 = convert (fntype, e1);
@@ -9780,7 +9780,7 @@ convert_member_func_to_ptr (tree type, tree expr, tsubst_flags_t complain)
     {
       tree member = PTRMEM_CST_MEMBER (expr);
       /* -ffast-contracts with P3097: what the pointer points to.  */
-      if (tree thunk = contract_pmf_thunk (member))
+      if (tree thunk = contract_pmf_thunk (member, /*lowering=*/true))
 	member = thunk;
       expr = build_address (member);
     }
@@ -11237,7 +11237,7 @@ expand_ptrmemfunc_cst (tree cst, tree *delta, tree *pfn)
   /* -ffast-contracts with P3097: a pointer to a virtual function with a
      precondition points to a thunk that checks it and dispatches, with the
      layout of a pointer to a non-virtual function of FN's class.  */
-  tree thunk = DECL_VIRTUAL_P (fn) ? contract_pmf_thunk (fn) : NULL_TREE;
+  tree thunk = DECL_VIRTUAL_P (fn) ? contract_pmf_thunk (fn, /*lowering=*/true) : NULL_TREE;
   if (thunk || !DECL_VIRTUAL_P (fn))
     {
       tree t = build_addr_func (thunk ? thunk : fn, tf_warning_or_error);
