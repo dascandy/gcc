@@ -2553,6 +2553,21 @@ avoid_likely_spilled_reg (rtx x)
   return x;
 }
 
+/* True if ADDR, the address a call is to return a structure into, is the
+   address the current function was itself given to return its value
+   into.  */
+
+static bool
+forwards_own_return_slot_p (rtx addr)
+{
+  tree result = DECL_RESULT (current_function_decl);
+  return (result
+	  && DECL_BY_REFERENCE (result)
+	  && DECL_RTL_SET_P (result)
+	  && REG_P (DECL_RTL (result))
+	  && rtx_equal_p (addr, DECL_RTL (result)));
+}
+
 /* Helper function for expand_call.
    Return false is EXP is not implementable as a sibling call.  */
 
@@ -2577,8 +2592,14 @@ can_implement_as_sibling_call_p (tree exp,
   /* Doing sibling call optimization needs some work, since
      structure_value_addr can be allocated on the stack.
      It does not seem worth the effort since few optimizable
-     sibling calls will return a structure.  */
-  if (structure_value_addr != NULL_RTX)
+     sibling calls will return a structure.  The exception is a call
+     from a thunk or thunk-like function of a function of the same type
+     that returns into the caller's own return slot, which was not
+     allocated here: the callee then does all that the caller would have
+     done after it.  */
+  if (structure_value_addr != NULL_RTX
+      && !(CALL_FROM_THUNK_P (exp)
+	   && forwards_own_return_slot_p (structure_value_addr)))
     {
       maybe_complain_about_tail_call (exp, _("callee returns a structure"));
       return false;
@@ -3151,13 +3172,19 @@ expand_call (tree exp, rtx target, int ignore)
       machine_mode callee_mode, callee_promoted_mode;
       int caller_unsignedp, callee_unsignedp;
       tree caller_res = DECL_RESULT (current_function_decl);
+      /* A result returned through a hidden pointer has the type of that
+	 pointer by now; compare the type the function returns.  */
+      tree caller_type = (DECL_BY_REFERENCE (caller_res)
+			  ? TREE_TYPE (TREE_TYPE (current_function_decl))
+			  : TREE_TYPE (caller_res));
 
-      caller_unsignedp = TYPE_UNSIGNED (TREE_TYPE (caller_res));
-      caller_mode = DECL_MODE (caller_res);
+      caller_unsignedp = TYPE_UNSIGNED (caller_type);
+      caller_mode = (DECL_BY_REFERENCE (caller_res)
+		     ? TYPE_MODE (caller_type) : DECL_MODE (caller_res));
       callee_unsignedp = TYPE_UNSIGNED (TREE_TYPE (funtype));
       callee_mode = TYPE_MODE (TREE_TYPE (funtype));
       caller_promoted_mode
-	= promote_function_mode (TREE_TYPE (caller_res), caller_mode,
+	= promote_function_mode (caller_type, caller_mode,
 				 &caller_unsignedp,
 				 TREE_TYPE (current_function_decl), 1);
       callee_promoted_mode

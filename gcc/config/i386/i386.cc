@@ -1120,7 +1120,13 @@ ix86_function_ok_for_sibcall (tree decl, tree exp)
      of the functions to have void return type as long as the return
      value of the other is passed in a register.  */
   a = ix86_function_value (TREE_TYPE (exp), decl_or_type, false);
-  b = ix86_function_value (TREE_TYPE (DECL_RESULT (cfun->decl)),
+  /* A result returned through a hidden pointer has the type of that
+     pointer by now (DECL_BY_REFERENCE); what is returned where is still
+     decided by the type the function returns.  */
+  tree cfun_result = DECL_RESULT (cfun->decl);
+  b = ix86_function_value (DECL_BY_REFERENCE (cfun_result)
+			   ? TREE_TYPE (TREE_TYPE (cfun->decl))
+			   : TREE_TYPE (cfun_result),
 			   cfun->decl, false);
   if (STACK_REG_P (a) || STACK_REG_P (b))
     {
