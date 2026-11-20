@@ -30,6 +30,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "attribs.h"
 #include "tree-iterator.h"
 #include "target.h"
+#include "contracts.h"
 
 static void push_eh_cleanup (tree);
 static tree prepare_eh_type (tree);
@@ -1400,6 +1401,18 @@ maybe_splice_retval_cleanup (tree compound_stmt, bool is_try)
       while (!tsi_end_p (iter)
 	     && TREE_CODE (tsi_stmt (iter)) == DECL_EXPR)
 	tsi_next (&iter);
+
+      /* Nor can the precondition checks ahead of a postcheck entry point
+	 (contract_postcheck_marker_p), and the cleanup belongs to that
+	 entry point, which starts after them.  */
+      if (function_body)
+	for (tree_stmt_iterator i = iter; !tsi_end_p (i); tsi_next (&i))
+	  if (contract_postcheck_marker_p (tsi_stmt (i)))
+	    {
+	      iter = i;
+	      tsi_next (&iter);
+	      break;
+	    }
 
       if (tsi_end_p (iter))
 	/* Nothing to wrap.  */

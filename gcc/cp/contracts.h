@@ -290,6 +290,14 @@ extern void place_override_shadows_alone	(override_shadows *);
 extern void finish_function_outlined_contracts	(tree);
 extern void set_contract_functions		(tree, tree, tree);
 
+extern bool contract_postcheck_entry_p		(tree);
+extern tree contract_postcheck_entry_origin	(tree);
+extern tree contract_postcheck_comdat_group	(tree);
+extern bool contract_postcheck_marker_p		(tree);
+extern tree get_postcheck_entry			(tree);
+extern void contract_split_postcheck_entry	(tree);
+extern void contract_postcheck_alias_clone	(tree, tree);
+extern void contract_finish_postcheck_entries	();
 extern tree maybe_contract_wrap_call		(tree, tree,
 						 bool = false);
 extern bool emit_contract_wrapper_func		(bool);

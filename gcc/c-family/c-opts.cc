@@ -1464,6 +1464,8 @@ c_common_post_options (const char **pfilename)
 				  flag_contracts_definition_check, false),
       CONTRACTS_DEPENDENT_OPTION ("contract-checks-outlined",
 				  flag_contract_checks_outlined, true),
+      CONTRACTS_DEPENDENT_OPTION ("contract-postcheck-entry",
+				  flag_contract_postcheck_entry, true),
       CONTRACTS_DEPENDENT_OPTION ("contract-disable-optimized-checks",
 				  flag_contract_disable_optimized_checks, true),
       CONTRACTS_DEPENDENT_OPTION ("contract-bypass-rethrowing-local-handler",

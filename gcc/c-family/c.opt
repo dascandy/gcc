@@ -1964,6 +1964,10 @@ fcontract-checks-outlined
 C++ ObjC++ Var(flag_contract_checks_outlined) Init(0)
 -fcontract-checks-outlined	Build contract checks using outlined functions.
 
+fcontract-postcheck-entry
+C++ ObjC++ Var(flag_contract_postcheck_entry) Init(0)
+Give each non-virtual function with a precondition a second entry point, named with a .postcheck suffix, that skips the precondition checks.  Changes the ABI.
+
 ; D4405: the semantics the analysis evaluation can have.
 
 Enum

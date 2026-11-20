@@ -6123,6 +6123,7 @@ c_parse_final_cleanups (void)
     {
       emit_contract_wrapper_func (/*done*/true);
       maybe_emit_violation_handler_wrappers ();
+      contract_finish_postcheck_entries ();
     }
 
   /* P3100: emit this TU's sanitizer contract-routing descriptors while

@@ -30,6 +30,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-inline.h"
 #include "tree-iterator.h"
 #include "attribs.h"
+#include "contracts.h"
 
 /* Prototypes.  */
 
@@ -556,8 +557,13 @@ maybe_clone_body (tree fn)
   bool can_alias = can_alias_cdtor (fn);
 
   /* If we decide to turn clones into thunks, they will branch to fn.
-     Must have original function available to call.  */
-  if (!can_alias && maybe_thunk_body (fn, need_alias))
+     Must have original function available to call.  A variant with a
+     postcheck entry point is split like any other function, which needs a
+     body of its own (contract_split_postcheck_entry).  */
+  if (!can_alias
+      && !(fns[0] && contract_postcheck_entry_p (fns[0]))
+      && !(fns[1] && contract_postcheck_entry_p (fns[1]))
+      && maybe_thunk_body (fn, need_alias))
     {
       pop_from_top_level ();
       /* We still need to emit the original function.  */
@@ -716,6 +722,8 @@ maybe_clone_body (tree fn)
 	    emit_associated_thunks (clone);
 	  /* We didn't generate a body, so remove the empty one.  */
 	  DECL_SAVED_TREE (clone) = void_node;
+	  /* Its postcheck entry point is an alias too.  */
+	  contract_postcheck_alias_clone (clone, fns[0]);
 	}
       else
 	expand_or_defer_fn (clone);

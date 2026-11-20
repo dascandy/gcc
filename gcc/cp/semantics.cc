@@ -6026,6 +6026,10 @@ expand_or_defer_fn (tree fn)
 {
   if (expand_or_defer_fn_1 (fn))
     {
+      /* Give a function with a postcheck entry point its final body, and
+	 the entry point its definition.  */
+      contract_split_postcheck_entry (fn);
+
       function_depth++;
 
       /* Expand or defer, at the whim of the compilation unit manager.  */

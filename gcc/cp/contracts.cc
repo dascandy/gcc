@@ -6152,7 +6152,8 @@ emit_capture_exception_reaction (tree contract, tree fndecl, tree sel)
 }
 
 static void
-emit_preconditions_and_capture_inits_interleaved (tree fndecl)
+emit_preconditions_and_capture_inits_interleaved (tree fndecl,
+						  bool emit_pre = true)
 {
   tree contracts = get_fn_contract_specifiers (fndecl);
   if (!contracts)
@@ -6173,7 +6174,11 @@ emit_preconditions_and_capture_inits_interleaved (tree fndecl)
 	{
 	  /* Emit this precondition (from the copy vector).  */
 	  gcc_checking_assert (pre_ix < pre_len);
-	  emit_contract_statement (TREE_VEC_ELT (pre_copies, pre_ix++));
+	  tree pre = TREE_VEC_ELT (pre_copies, pre_ix++);
+	  /* The checks were emitted ahead of the captures, before the
+	     postcheck entry point (maybe_apply_function_contracts).  */
+	  if (emit_pre)
+	    emit_contract_statement (pre);
 	}
       else if (POSTCONDITION_P (contract))
 	{
@@ -6546,6 +6551,9 @@ wrap_postconditions_in_retval_cleanup (tree fndecl, tree stmts)
    the function has a non-throwing eh spec, then the handler is simply the
    post-condition checker.  */
 
+static void add_postcheck_marker ();
+static bool postcheck_split_body_p (tree);
+
 void
 maybe_apply_function_contracts (tree fndecl)
 {
@@ -6695,10 +6703,25 @@ maybe_apply_function_contracts (tree fndecl)
   if (overrides)
     start_override_shadows (overrides, cur_stmt_list);
 
+  /* With a postcheck entry point, the precondition checks come first and
+     the entry point right after them, marked for
+     contract_split_postcheck_entry: what follows the marker -- the
+     postcondition captures, the body and the postcondition checks -- is
+     what a caller that has checked the preconditions itself runs.  An
+     outlined precondition function initializes the captures along with the
+     checks, so there it is not split.  */
+  const bool postcheck_split
+    = (do_pre
+       && postcheck_split_body_p (fndecl)
+       && !(flag_contract_checks_outlined
+	    && has_postcondition_captures_p (fndecl)));
+
   /* If we have a pre, but not a post, then just emit that and we are done.  */
   if (!do_post)
     {
       apply_preconditions (fndecl);
+      if (postcheck_split)
+	add_postcheck_marker ();
       add_stmt (fnbody);
       finish_compound_stmt (compound_stmt);
       return;
@@ -6714,18 +6737,29 @@ maybe_apply_function_contracts (tree fndecl)
 
   /* Emit preconditions and capture inits.  For outlined mode, __pre_fn
      handles interleaving internally.  For inline mode with captures,
-     use the interleaved version that respects lexical ordering (P3098).  */
+     use the interleaved version that respects lexical ordering (P3098),
+     unless there is a postcheck entry point: then all the precondition
+     checks come before it, and the captures after it.  */
+  if (postcheck_split)
+    {
+      apply_preconditions (fndecl);
+      add_postcheck_marker ();
+    }
   if (flag_contract_checks_outlined)
-    apply_preconditions (fndecl);
+    {
+      if (!postcheck_split)
+	apply_preconditions (fndecl);
+    }
   else if (has_postcondition_captures_p (fndecl))
     {
       /* In a statement list of its own, so that the EH-only capture
 	 cleanups it pushes end here, where the region below takes over.  */
       tree region = push_stmt_list ();
-      emit_preconditions_and_capture_inits_interleaved (fndecl);
+      emit_preconditions_and_capture_inits_interleaved (fndecl,
+							!postcheck_split);
       add_stmt (pop_stmt_list (region));
     }
-  else if (do_pre)
+  else if (do_pre && !postcheck_split)
     apply_preconditions (fndecl);
 
   tree try_fin = build_stmt (loc, TRY_FINALLY_EXPR, fnbody, NULL_TREE);
@@ -15792,6 +15826,581 @@ place_override_shadows_alone (override_shadows *ov)
     add_override_base_post_obligations ();
   TREE_OPERAND (try_fin, 1) = pop_stmt_list (TREE_OPERAND (try_fin, 1));
   finish_compound_stmt (compound_stmt);
+}
+
+/* Postcheck entry points (-fcontract-postcheck-entry).
+
+   Every non-virtual function with a precondition gets two entry points.  F,
+   with the usual symbol, checks the preconditions and then jumps to P, the
+   same symbol with ".postcheck" appended, which holds the rest of the body
+   and checks the postconditions.  Taking F's address always yields F,
+   because P is a separate declaration that nothing in the program can
+   name.
+
+   Whether P exists depends only on the declaration (contract_postcheck_entry_p),
+   never on evaluation semantics, which can differ between translation
+   units: a caller in one translation unit relies on P from another.
+
+   The body is split after it has been genericized, in expand_or_defer_fn,
+   which is also where the constructor and destructor clones are made, so
+   that each clone is split the same way.  maybe_apply_function_contracts
+   leaves a marker label after the precondition checks
+   (add_postcheck_marker).  P gets a copy of what follows the marker; F
+   keeps what precedes it and then returns P's result
+   (contract_split_postcheck_entry).  */
+
+/* The name of the marker label.  */
+
+static GTY(()) tree postcheck_marker_identifier;
+
+/* F -> P and P -> F.  */
+
+static GTY(()) hash_map<tree, tree, pch_traits> *postcheck_entries;
+static GTY(()) hash_map<tree, tree, pch_traits> *postcheck_origins;
+
+/* For a P that is an alias, the function it is an alias of; for a P with a
+   body of its own, P itself.  Used for the postcheck entry point of a
+   constructor or destructor variant that is itself an alias.  */
+
+static GTY(()) hash_map<tree, tree, pch_traits> *postcheck_targets;
+
+/* If FNDECL is the postcheck entry point of a function, that function.  */
+
+tree
+contract_postcheck_entry_origin (tree fndecl)
+{
+  tree *p = hash_map_safe_get (postcheck_origins, fndecl);
+  return p ? *p : NULL_TREE;
+}
+
+/* The COMDAT group of P, the postcheck entry point of a function F
+   (cxx_comdat_group).  An alias goes in its target's group.  Otherwise P
+   has a group of its own, named after F's with ".postcheck" appended
+   (`_Z1fi.postcheck`, or `_ZN1SC5Ei.postcheck` for the constructor
+   variants that share `_ZN1SC5Ei`), so that the linker can keep P and
+   discard F, which callers that check the preconditions themselves never
+   call.  */
+
+tree
+contract_postcheck_comdat_group (tree p)
+{
+  tree f = contract_postcheck_entry_origin (p);
+  gcc_checking_assert (f);
+  if (tree *target = hash_map_safe_get (postcheck_targets, p))
+    if (*target != p)
+      return cxx_comdat_group (*target);
+  symtab_node *fn = symtab_node::get (f);
+  tree group = (fn && fn->get_comdat_group ()
+		? fn->get_comdat_group () : cxx_comdat_group (f));
+  if (DECL_P (group))
+    group = DECL_ASSEMBLER_NAME (group);
+  return clone_identifier (group, "postcheck");
+}
+
+/* True if the body of FNDECL, a function, is to be split for a postcheck
+   entry point: it has a precondition and is not virtual.  This depends only
+   on the declaration, so that every translation unit agrees.  For a
+   maybe-in-charge constructor or destructor, this is about the clones made
+   from its body.  */
+
+static bool
+postcheck_split_body_p (tree fndecl)
+{
+  if (!flag_contract_postcheck_entry
+      || !flag_contracts
+      || TREE_CODE (fndecl) != FUNCTION_DECL
+      || !DECL_LANG_SPECIFIC (fndecl)
+      || DECL_CONTRACT_WRAPPER (fndecl)
+      || CONTRACT_HELPER (fndecl) != ldf_contract_none
+      || DECL_IMMEDIATE_FUNCTION_P (fndecl)
+      || contract_postcheck_entry_origin (fndecl))
+    return false;
+
+  tree origin = DECL_ORIGIN (fndecl);
+  if (DECL_VIRTUAL_P (origin) || DECL_VIRTUAL_P (fndecl))
+    return false;
+
+  if (tree specs = get_fn_contract_specifiers (origin))
+    for (tree contract : tree_vec_range (specs))
+      if (PRECONDITION_P (contract))
+	return true;
+  return false;
+}
+
+/* True if FNDECL, a function, has a postcheck entry point.  A
+   maybe-in-charge constructor or destructor is never emitted, only its
+   clones, which have their own.  */
+
+bool
+contract_postcheck_entry_p (tree fndecl)
+{
+  return (postcheck_split_body_p (fndecl)
+	  && !DECL_MAYBE_IN_CHARGE_CDTOR_P (fndecl));
+}
+
+/* True if STMT is the marker add_postcheck_marker leaves after the
+   precondition checks.  */
+
+bool
+contract_postcheck_marker_p (tree stmt)
+{
+  return (postcheck_marker_identifier
+	  && TREE_CODE (stmt) == LABEL_EXPR
+	  && DECL_NAME (LABEL_EXPR_LABEL (stmt)) == postcheck_marker_identifier
+	  && DECL_ARTIFICIAL (LABEL_EXPR_LABEL (stmt)));
+}
+
+/* Add the marker that separates the precondition checks of the current
+   function from the rest of its body.  */
+
+static void
+add_postcheck_marker ()
+{
+  if (!postcheck_marker_identifier)
+    postcheck_marker_identifier = get_identifier ("__postcheck_entry");
+  tree label = create_artificial_label (UNKNOWN_LOCATION);
+  DECL_NAME (label) = postcheck_marker_identifier;
+  add_stmt (build_stmt (UNKNOWN_LOCATION, LABEL_EXPR, label));
+}
+
+/* Give P the parameters and result of F as they are now, recording each
+   pair in DECL_MAP if non-null.  */
+
+static void
+copy_postcheck_parms (tree p, tree f, hash_map<tree, tree> *decl_map)
+{
+  tree *last = &DECL_ARGUMENTS (p);
+  *last = NULL_TREE;
+  for (tree parm = DECL_ARGUMENTS (f); parm; parm = DECL_CHAIN (parm))
+    {
+      tree copy = copy_node (parm);
+      DECL_CONTEXT (copy) = p;
+      DECL_CHAIN (copy) = NULL_TREE;
+      *last = copy;
+      last = &DECL_CHAIN (copy);
+      if (decl_map)
+	decl_map->put (parm, copy);
+    }
+  if (tree result = DECL_RESULT (f))
+    {
+      tree copy = copy_node (result);
+      DECL_CONTEXT (copy) = p;
+      DECL_RESULT (p) = copy;
+      if (decl_map)
+	decl_map->put (result, copy);
+    }
+  else
+    DECL_RESULT (p) = NULL_TREE;
+}
+
+/* Give P, the postcheck entry point of F, F's linkage and the properties a
+   caller or the middle end can see.  The C++ linkage of P is decided the
+   same way as F's, because it has the same language-specific properties;
+   its COMDAT group is its own (contract_postcheck_comdat_group).  */
+
+static void
+sync_postcheck_decl (tree p, tree f)
+{
+  TREE_PUBLIC (p) = TREE_PUBLIC (f);
+  DECL_EXTERNAL (p) = DECL_EXTERNAL (f);
+  DECL_NOT_REALLY_EXTERN (p) = DECL_NOT_REALLY_EXTERN (f);
+  DECL_INTERFACE_KNOWN (p) = DECL_INTERFACE_KNOWN (f);
+  DECL_COMDAT (p) = DECL_COMDAT (f);
+  DECL_WEAK (p) = DECL_WEAK (f);
+  DECL_VISIBILITY (p) = DECL_VISIBILITY (f);
+  DECL_VISIBILITY_SPECIFIED (p) = DECL_VISIBILITY_SPECIFIED (f);
+  DECL_DLLIMPORT_P (p) = DECL_DLLIMPORT_P (f);
+  DECL_DECLARED_INLINE_P (p) = DECL_DECLARED_INLINE_P (f);
+  DECL_DISREGARD_INLINE_LIMITS (p) = DECL_DISREGARD_INLINE_LIMITS (f);
+  DECL_UNINLINABLE (p) = DECL_UNINLINABLE (f);
+  DECL_USE_TEMPLATE (p) = DECL_USE_TEMPLATE (f);
+  DECL_ATTRIBUTES (p) = DECL_ATTRIBUTES (f);
+  DECL_SOURCE_LOCATION (p) = DECL_SOURCE_LOCATION (f);
+  TREE_NOTHROW (p) = TREE_NOTHROW (f);
+  TREE_THIS_VOLATILE (p) = TREE_THIS_VOLATILE (f);
+  TREE_READONLY (p) = TREE_READONLY (f);
+  DECL_PURE_P (p) = DECL_PURE_P (f);
+  DECL_NO_INSTRUMENT_FUNCTION_ENTRY_EXIT (p)
+    = DECL_NO_INSTRUMENT_FUNCTION_ENTRY_EXIT (f);
+  DECL_NO_LIMIT_STACK (p) = DECL_NO_LIMIT_STACK (f);
+  DECL_FUNCTION_SPECIFIC_TARGET (p) = DECL_FUNCTION_SPECIFIC_TARGET (f);
+  DECL_FUNCTION_SPECIFIC_OPTIMIZATION (p)
+    = DECL_FUNCTION_SPECIFIC_OPTIMIZATION (f);
+  DECL_FUNCTION_PERSONALITY (p) = DECL_FUNCTION_PERSONALITY (f);
+  if (symtab_node *fn = symtab_node::get (f))
+    if (fn->get_section () && !fn->implicit_section)
+      set_decl_section_name (p, f);
+}
+
+/* Return the postcheck entry point of FNDECL, declaring it if need be.  A
+   caller may need it before, or without, FNDECL's definition.  */
+
+tree
+get_postcheck_entry (tree fndecl)
+{
+  gcc_checking_assert (contract_postcheck_entry_p (fndecl));
+  if (tree *p = hash_map_safe_get (postcheck_entries, fndecl))
+    return *p;
+
+  tree p = copy_decl (fndecl);
+  SET_DECL_ASSEMBLER_NAME (p, clone_function_name (fndecl, "postcheck"));
+  DECL_CHAIN (p) = NULL_TREE;
+  DECL_INITIAL (p) = NULL_TREE;
+  DECL_SAVED_TREE (p) = NULL_TREE;
+  DECL_STRUCT_FUNCTION (p) = NULL;
+  DECL_ARTIFICIAL (p) = true;
+  TREE_ADDRESSABLE (p) = false;
+  TREE_USED (p) = true;
+  TREE_ASM_WRITTEN (p) = false;
+  DECL_PRESERVE_P (p) = false;
+  DECL_VIRTUAL_P (p) = false;
+  DECL_VINDEX (p) = NULL_TREE;
+  DECL_DECLARED_CONSTEXPR_P (p) = false;
+  copy_postcheck_parms (p, fndecl, NULL);
+  sync_postcheck_decl (p, fndecl);
+
+  hash_map_maybe_create<hm_ggc> (postcheck_entries);
+  hash_map_maybe_create<hm_ggc> (postcheck_origins);
+  postcheck_entries->put (fndecl, p);
+  postcheck_origins->put (p, fndecl);
+  return p;
+}
+
+/* The STATEMENT_LIST that holds the marker in BODY, and in *IT the marker,
+   if there is one.  */
+
+struct postcheck_marker_search
+{
+  tree list;
+  tree_stmt_iterator it;
+};
+
+static tree
+find_postcheck_marker_r (tree *tp, int *walk_subtrees, void *data)
+{
+  postcheck_marker_search *d = (postcheck_marker_search *) data;
+  if (TYPE_P (*tp))
+    *walk_subtrees = 0;
+  else if (TREE_CODE (*tp) == STATEMENT_LIST)
+    for (tree_stmt_iterator i = tsi_start (*tp); !tsi_end_p (i); tsi_next (&i))
+      if (contract_postcheck_marker_p (tsi_stmt (i)))
+	{
+	  d->list = *tp;
+	  d->it = i;
+	  return *tp;
+	}
+  return NULL_TREE;
+}
+
+static tree
+find_postcheck_marker (tree body, tree_stmt_iterator *it)
+{
+  postcheck_marker_search d;
+  d.list = NULL_TREE;
+  walk_tree_without_duplicates (&body, find_postcheck_marker_r, &d);
+  if (d.list)
+    *it = d.it;
+  return d.list;
+}
+
+/* Remove the marker in BODY and everything before it in its statement
+   list: the precondition checks.  */
+
+static void
+drop_postcheck_preconditions (tree body)
+{
+  tree_stmt_iterator it;
+  tree list = find_postcheck_marker (body, &it);
+  gcc_assert (list);
+  for (tree_stmt_iterator i = tsi_start (list); ; )
+    {
+      bool last = contract_postcheck_marker_p (tsi_stmt (i));
+      tsi_delink (&i);
+      if (last)
+	break;
+    }
+}
+
+/* Return a statement that returns what calling TO with the parameters of
+   FROM, a function of the same type, returns.  FROM has been genericized:
+   a parameter passed by invisible reference is a pointer to the object,
+   which is passed on as it is, the way expand_thunk does; that is also the
+   type of TO's parameter, should the call be inlined.  The call is marked
+   as one from a thunk so that it can be a sibling call even when
+   -foptimize-sibling-calls is off.  */
+
+static tree
+build_postcheck_forward (tree from, tree to)
+{
+  location_t loc = DECL_SOURCE_LOCATION (from);
+  auto_vec<tree> args;
+  for (tree parm = DECL_ARGUMENTS (from); parm; parm = DECL_CHAIN (parm))
+    args.safe_push (parm);
+
+  tree fntype = TREE_TYPE (to);
+  tree restype = TREE_TYPE (fntype);
+  tree call = build_call_array_loc (loc, restype,
+				    build_address (to),
+				    args.length (), args.address ());
+  CALL_FROM_THUNK_P (call) = true;
+  CALL_EXPR_TAILCALL (call) = true;
+  if (TREE_NOTHROW (to) || type_noexcept_p (fntype))
+    TREE_NOTHROW (call) = true;
+
+  tree stmts = NULL_TREE;
+  if (VOID_TYPE_P (restype))
+    {
+      append_to_statement_list_force (call, &stmts);
+      append_to_statement_list_force (build1 (RETURN_EXPR, void_type_node,
+					      NULL_TREE), &stmts);
+    }
+  else
+    {
+      tree result = DECL_RESULT (from);
+      tree lhs = (DECL_BY_REFERENCE (result)
+		  ? build_fold_indirect_ref (result) : result);
+      tree init = build2 (INIT_EXPR, TREE_TYPE (lhs), lhs, call);
+      append_to_statement_list_force (build1 (RETURN_EXPR, void_type_node,
+					      init), &stmts);
+    }
+  return stmts;
+}
+
+/* Give P, the postcheck entry point of F, a function of its own: a struct
+   function like F's and an outermost block.  */
+
+static void
+start_postcheck_function (tree p, tree f)
+{
+  push_struct_function (p);
+  struct function *pf = DECL_STRUCT_FUNCTION (p);
+  struct function *ff = DECL_STRUCT_FUNCTION (f);
+  pf->function_start_locus = ff->function_start_locus;
+  pf->function_end_locus = ff->function_end_locus;
+  pf->coroutine_component = ff->coroutine_component;
+  pf->has_forced_label_in_static = ff->has_forced_label_in_static;
+  pf->has_local_explicit_reg_vars = ff->has_local_explicit_reg_vars;
+  pf->calls_eh_return = ff->calls_eh_return;
+  /* Gimplifying P's body reads the same C++ function data as F's.  */
+  if (ff->language)
+    {
+      pf->language = ggc_alloc<language_function> ();
+      *pf->language = *ff->language;
+    }
+  pop_cfun ();
+
+  tree block = make_node (BLOCK);
+  BLOCK_SUPERCONTEXT (block) = p;
+  DECL_INITIAL (p) = block;
+}
+
+/* Copy the body of F, which has been genericized, to P, mapping F's
+   parameters and result to P's.  */
+
+static void
+copy_postcheck_body (tree p, tree f)
+{
+  hash_map<tree, tree> decl_map;
+  copy_postcheck_parms (p, f, &decl_map);
+
+  copy_body_data id;
+  memset (&id, 0, sizeof (id));
+  id.src_fn = f;
+  id.dst_fn = p;
+  id.src_cfun = DECL_STRUCT_FUNCTION (f);
+  id.decl_map = &decl_map;
+  id.copy_decl = copy_decl_no_change;
+  id.transform_call_graph_edges = CB_CGE_DUPLICATE;
+  id.transform_new_cfg = true;
+  id.transform_return_to_modify = false;
+  id.eh_lp_nr = 0;
+
+  push_cfun (DECL_STRUCT_FUNCTION (p));
+  tree stmts = DECL_SAVED_TREE (f);
+  walk_tree (&stmts, copy_tree_body_r, &id, NULL);
+  pop_cfun ();
+  DECL_SAVED_TREE (p) = stmts;
+}
+
+/* Make P, the postcheck entry point of F, an alias of TARGET, F or the
+   postcheck entry point of the function F is an alias of.  */
+
+static void
+make_postcheck_alias (tree p, tree f, tree target)
+{
+  copy_postcheck_parms (p, f, NULL);
+  start_postcheck_function (p, f);
+  DECL_SAVED_TREE (p) = void_node;
+  hash_map_maybe_create<hm_ggc> (postcheck_targets);
+  postcheck_targets->put (p, target);
+  cgraph_node::get_create (target)->create_same_body_alias (p, target);
+  expand_or_defer_fn_1 (p);
+}
+
+/* FN, a function with a postcheck entry point, has been genericized and is
+   about to be handed to the middle end: give the postcheck entry point its
+   definition, and FN its final body.  */
+
+void
+contract_split_postcheck_entry (tree fn)
+{
+  if (!contract_postcheck_entry_p (fn))
+    return;
+
+  tree p = get_postcheck_entry (fn);
+  if (DECL_SAVED_TREE (p))
+    return;
+  sync_postcheck_decl (p, fn);
+
+  tree_stmt_iterator mit;
+  bool marker = find_postcheck_marker (DECL_SAVED_TREE (fn), &mit) != NULL;
+  bool copyable = !copy_forbidden (DECL_STRUCT_FUNCTION (fn));
+  bool variadic = stdarg_p (TREE_TYPE (fn));
+  enum { SPLIT, COPY, ALIAS, FORWARD } mode;
+  if (!marker || !copyable)
+    mode = TARGET_SUPPORTS_ALIASES ? ALIAS : variadic ? COPY : FORWARD;
+  else
+    mode = variadic ? COPY : SPLIT;
+  if (mode == COPY && !copyable)
+    {
+      sorry_at (DECL_SOURCE_LOCATION (fn),
+		"postcheck entry point of %qD, a C-variadic function whose "
+		"body cannot be copied, on a target without aliases", fn);
+      return;
+    }
+
+  if (mode == ALIAS)
+    {
+      make_postcheck_alias (p, fn, fn);
+      return;
+    }
+
+  start_postcheck_function (p, fn);
+  hash_map_maybe_create<hm_ggc> (postcheck_targets);
+  postcheck_targets->put (p, p);
+
+  if (mode == FORWARD)
+    {
+      copy_postcheck_parms (p, fn, NULL);
+      DECL_SAVED_TREE (p) = build_postcheck_forward (p, fn);
+      DECL_NO_INSTRUMENT_FUNCTION_ENTRY_EXIT (p) = true;
+    }
+  else
+    {
+      copy_postcheck_body (p, fn);
+      if (marker)
+	drop_postcheck_preconditions (DECL_SAVED_TREE (p));
+    }
+
+  if (mode == SPLIT)
+    {
+      /* FN keeps the precondition checks and then returns P's result.  */
+      tree list = find_postcheck_marker (DECL_SAVED_TREE (fn), &mit);
+      while (!tsi_end_p (mit))
+	tsi_delink (&mit);
+      append_to_statement_list_force (build_postcheck_forward (fn, p), &list);
+
+      /* Only P, which holds the body, is instrumented.  */
+      DECL_NO_INSTRUMENT_FUNCTION_ENTRY_EXIT (fn) = true;
+
+      /* FN comes out right before P, so that where the two share a
+	 section the jump at its end can be turned into a fall-through.
+	 Each keeps its own section, so that the linker can discard FN.
+	 An always_inline P is inlined into FN regardless.  */
+      if (!DECL_DISREGARD_INLINE_LIMITS (p))
+	cgraph_node::get_create (fn)->set_layout_successor
+	  (cgraph_node::get_create (p));
+    }
+
+  expand_or_defer_fn (p);
+}
+
+/* CLONE, a constructor or destructor variant, has just been made an alias
+   of BASE, another variant of the same constructor or destructor: make the
+   postcheck entry point of CLONE an alias of that of BASE.  */
+
+void
+contract_postcheck_alias_clone (tree clone, tree base)
+{
+  if (!contract_postcheck_entry_p (clone))
+    return;
+  tree *base_p = hash_map_safe_get (postcheck_entries, base);
+  if (!base_p)
+    return;
+  tree *target = hash_map_safe_get (postcheck_targets, *base_p);
+  if (!target)
+    return;
+  tree p = get_postcheck_entry (clone);
+  if (DECL_SAVED_TREE (p))
+    return;
+  sync_postcheck_decl (p, clone);
+  make_postcheck_alias (p, clone, *target);
+}
+
+/* Helper for contract_finish_postcheck_entries.  */
+
+static bool
+clear_postcheck_external (symtab_node *node, void *)
+{
+  DECL_EXTERNAL (node->decl) = 0;
+  return false;
+}
+
+/* At the end of the translation unit, once the linkage of every function
+   is known: give each postcheck entry point of a function in a COMDAT group
+   its own group, or its alias target's (contract_postcheck_comdat_group).
+   F and P stay in separate groups, and so in separate sections, so that
+   the linker can keep one and discard the other.  */
+
+void
+contract_finish_postcheck_entries ()
+{
+  if (!postcheck_entries)
+    return;
+  /* The entry points with a body of their own first, so that an alias of
+     one of them finds its target's group.  */
+  for (int aliases = 0; aliases < 2; aliases++)
+    for (auto it = postcheck_entries->begin ();
+	 it != postcheck_entries->end (); ++it)
+      {
+	tree f = (*it).first, p = (*it).second;
+	symtab_node *fn = symtab_node::get (f);
+	symtab_node *pn = symtab_node::get (p);
+	if (!fn || !pn || !DECL_SAVED_TREE (p))
+	  continue;
+	tree *target = hash_map_safe_get (postcheck_targets, p);
+	tree t = target && *target != p ? *target : NULL_TREE;
+	if (aliases != (t != NULL_TREE))
+	  continue;
+
+	if (t)
+	  {
+	    symtab_node *tn = symtab_node::get (t);
+	    if (tn && tn->get_comdat_group () && !pn->same_comdat_group)
+	      {
+		DECL_COMDAT (p) = DECL_COMDAT (t);
+		DECL_WEAK (p) = DECL_WEAK (t);
+		pn->set_comdat_group (NULL_TREE);
+		pn->add_to_same_comdat_group (tn);
+	      }
+	  }
+	else if (fn->get_comdat_group () && !pn->get_comdat_group ())
+	  {
+	    DECL_COMDAT (p) = DECL_COMDAT (f);
+	    DECL_WEAK (p) = DECL_WEAK (f);
+	    pn->set_comdat_group (contract_postcheck_comdat_group (p));
+	  }
+
+	/* F jumps to P, and an alias P needs its target: if
+	   c_parse_final_cleanups decided to emit only one of the two, emit
+	   both, and let the call graph drop whichever COMDAT one nothing
+	   refers to.  */
+	if (DECL_EXTERNAL (f) != DECL_EXTERNAL (p))
+	  for (tree d : { f, p })
+	    if (DECL_EXTERNAL (d) && DECL_NOT_REALLY_EXTERN (d))
+	      symtab_node::get (d)->call_for_symbol_and_aliases
+		(clear_postcheck_external, NULL, true);
+      }
 }
 
 #include "gt-cp-contracts.h"

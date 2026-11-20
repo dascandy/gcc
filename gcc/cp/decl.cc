@@ -21729,6 +21729,11 @@ cp_missing_noreturn_ok_p (tree decl)
 tree
 cxx_comdat_group (tree decl)
 {
+  /* The postcheck entry point of a function has a group of its own.  */
+  if (TREE_CODE (decl) == FUNCTION_DECL
+      && contract_postcheck_entry_origin (decl))
+    return contract_postcheck_comdat_group (decl);
+
   /* Virtual tables, construction virtual tables, and virtual table
      tables all go in a single COMDAT group, named after the primary
      virtual table.  */

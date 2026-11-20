@@ -228,6 +228,7 @@ in the following sections.
 -fno-contract-analysis-skip-dead-calls
 -fcontract-evaluation-semantic=@r{[}ignore@r{|}observe@r{|}enforce@r{|}quick_enforce@r{|}assume@r{|}noexcept_enforce@r{|}noexcept_observe@r{|}prove@r{|}diagnose@r{]}
 -fcontract-checks-outlined
+-fcontract-postcheck-entry
 -fcontract-disable-optimized-checks
 -fno-contract-bypass-rethrowing-local-handler
 -fcontract-comment-from-expression
@@ -3486,6 +3487,49 @@ expanded in-line into function bodies.  This option causes a small function to
 be created instead (containing the checks) that is called in the relevant
 position.  This permits different criteria to be applied to the compilation of
 the checking and the remainder of the function body.
+
+@opindex fcontract-postcheck-entry
+@opindex fno-contract-postcheck-entry
+@item -fcontract-postcheck-entry
+Give every function that has a precondition, other than a virtual function,
+a second entry point that skips the precondition checks.  This option
+changes the ABI: every translation unit that defines or calls such a
+function must be compiled with it.
+
+The function keeps its usual symbol, which checks the preconditions and
+then jumps to the second entry point, a symbol of the same name with
+@samp{.postcheck} appended (for example @samp{_Z1fi.postcheck}, which
+@command{c++filt} shows as @samp{f(int) [clone .postcheck]}).  The second
+entry point holds the body of the function and checks its postconditions.
+Each constructor and destructor variant gets its own pair, as does a
+coroutine, whose preconditions are checked before its ramp function does
+anything else.  Taking the address of the function always yields the
+first entry point.
+
+The two entry points have sections of their own under
+@option{-ffunction-sections}, and COMDAT groups of their own for an inline
+function or a template instantiation, so that the linker can discard the
+first entry point when nothing calls it.  GCC outputs the first entry point
+immediately before the second, never inlines the second into the first,
+and makes the jump the last instruction of the first, so that where the
+two end up in the same section a later pass can remove the jump and let
+execution fall through.  The jump is a tail call at every optimization
+level where the target allows one, except at @option{-O0} for a function
+that returns a class through a hidden pointer, which calls the second
+entry point and returns.  This placement is not kept across link-time
+optimization.  With @option{-finstrument-functions} or @option{-pg}, only
+the second entry point is instrumented.
+
+Postcondition captures are initialized at the second entry point, after all
+the preconditions have been checked.  When the second entry point cannot
+be split off -- the preconditions are all ignored in this translation
+unit, or the body cannot be copied -- it is an alias of the first, or a
+function that forwards to the first where the target has no aliases, and
+runs the same precondition checks as the first.  A C-variadic function
+keeps its whole body at the first entry point and gets a copy of it,
+without the precondition checks, at the second.  With
+@option{-fcontract-checks-outlined}, a function whose postconditions have
+captures gets an alias.
 
 @opindex fcontract-analysis-semantic
 @item -fcontract-analysis-semantic=@var{semantic}
