@@ -3598,14 +3598,28 @@ This option enables the following optimizations:
 @itemize @bullet
 @item
 After the call, a caller that checks a function's preconditions assumes
-each postcondition of the function that it does not check itself, as
-@code{[[assume (@var{predicate})]]} would.  This applies to postconditions
-that the function itself enforces (with @code{enforce},
-@code{quick_enforce} or @code{noexcept_enforce}) or assumes, with an
-evaluation semantic chosen at compile time.  It does not apply to a
-postcondition with captures, a call through a function pointer, or a
-virtual call.
+each postcondition of the function that it does not check itself.  This
+applies to postconditions that the function itself enforces (with
+@code{enforce}, @code{quick_enforce} or @code{noexcept_enforce}) or
+assumes, with an evaluation semantic chosen at compile time.  It does not
+apply to a postcondition with captures, a call through a function pointer,
+or a virtual call.
+
+@item
+At the second entry point of a function (see
+@option{-fcontract-postcheck-entry}), GCC assumes each precondition that the function enforces or assumes, including one whose
+predicate calls a function or has side effects.
 @end itemize
+
+Each of these assumptions is made by evaluating the predicate, as
+@code{if (!(@var{predicate})) __builtin_unreachable ();} would, rather than
+as @code{[[assume (@var{predicate})]]} would, so that GCC can use what the
+predicate says about memory and about the results of calls.  The predicate
+is evaluated whatever its side effects, which can therefore happen once
+more than the contract checks themselves make them happen; inlining,
+including at link time, removes the evaluation where it can.  Without
+optimization, with @option{-Og}, and with @option{-fcontracts-p4405}, the
+assumptions are made as @code{[[assume]]} makes them instead.
 
 It has no effect without @option{-fcontracts}.  The name of this option is
 preliminary and may change.

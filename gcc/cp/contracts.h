@@ -138,6 +138,14 @@ enum detection_mode : uint16_t {
 #define CONTRACT_TERMINATING_P(NODE) \
   (TREE_LANG_FLAG_5 (CONTRACT_CHECK (NODE)))
 
+/* True if NODE, a copy of a precondition or postcondition with the assume
+   semantic, is one that -ffast-contracts lets be evaluated: a caller-side
+   wrapper's assumption of a postcondition the callee checks, or the
+   assumption of a precondition at the postcheck entry point
+   (fast_contracts_evaluate_assumptions_p).  */
+#define CONTRACT_EVALUATED_ASSUMPTION_P(NODE) \
+  (TREE_LANG_FLAG_6 (CONTRACT_CHECK (NODE)))
+
 /* True iff the condition of the contract NODE is not yet parsed.  */
 #define CONTRACT_CONDITION_DEFERRED_P(NODE) \
   (TREE_CODE (CONTRACT_CONDITION (NODE)) == DEFERRED_PARSE)

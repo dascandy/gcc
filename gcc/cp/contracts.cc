@@ -8178,6 +8178,24 @@ retarget_wrapper_call (tree wrapdecl, tree from, tree to)
   gcc_checking_assert (found);
 }
 
+/* -ffast-contracts: true if the assumptions it derives from contract
+   checks made elsewhere (CONTRACT_EVALUATED_ASSUMPTION_P) evaluate their
+   predicates, as `if (!P) __builtin_unreachable ()', rather than being
+   lowered as [[assume]] lowers its own.  The other side of the call has
+   just evaluated the same predicate, and side effects of contract
+   predicates are of no concern under -ffast-contracts, so a predicate is
+   evaluated whatever it does.  Not without optimization, where the
+   evaluation would stay, nor under -Og, where __builtin_unreachable traps,
+   nor under -fcontracts-p4405, whose analysis evaluations a predicate's
+   calls would be subject to again.  */
+
+static bool
+fast_contracts_evaluate_assumptions_p ()
+{
+  return (flag_fast_contracts && optimize && !optimize_debug
+	  && !flag_contracts_p4405);
+}
+
 /* -ffast-contracts: true if CONTRACT, one of the contracts of FNDECL, is a
    postcondition that holds whenever FNDECL returns normally, so that a
    caller-side wrapper may assume it after the call.  That is so when the
@@ -8329,6 +8347,7 @@ define_one_contract_wrapper_func (tree fndecl, tree wrapdecl)
 	      = build_int_cst (uint16_type_node, CES_ASSUME);
 	    CONTRACT_CONSTEXPR_EVALUATION_SEMANTIC (copy)
 	      = build_int_cst (uint16_type_node, CES_IGNORE);
+	    CONTRACT_EVALUATED_ASSUMPTION_P (copy) = true;
 	  }
     }
 
@@ -12249,6 +12268,8 @@ contract_local_handler_always_rethrows_p (tree contract,
 static tree
 build_contract_assumption (tree contract)
 {
+  bool evaluated = (CONTRACT_EVALUATED_ASSUMPTION_P (contract)
+		    && fast_contracts_evaluate_assumptions_p ());
   if (!contract_lowered_as_assumption_p (contract, CES_ASSUME))
     return void_node;
   remap_dummy_this (current_function_decl, &CONTRACT_CONDITION (contract));
@@ -12262,6 +12283,18 @@ build_contract_assumption (tree contract)
     }
   tree cond = unshare_expr (CONTRACT_CONDITION (contract));
   cond = fold_build_cleanup_point_expr (TREE_TYPE (cond), cond);
+  /* -ffast-contracts: evaluate the predicate, whatever its side effects,
+     and let the optimizers take it to hold where it is true.  Unlike
+     [[assume]], this lets them use what the predicate says about memory
+     and the results of calls, and inlining (or LTO) can remove what the
+     evaluation costs.  */
+  if (evaluated)
+    {
+      location_t loc = EXPR_LOCATION (contract);
+      return build3_loc (loc, COND_EXPR, void_type_node, cond, void_node,
+			 build_call_expr_loc (loc,
+					      builtin_decl_unreachable (), 0));
+    }
   return build_call_expr_internal_loc (EXPR_LOCATION (contract), IFN_ASSUME,
 				       void_type_node, 1, cond);
 }
@@ -16228,8 +16261,12 @@ add_postcheck_premises (tree fndecl)
 	}
       /* A predicate that calls a function is outlined into a function of
 	 its own, and under D4405 its calls' preconditions would be analyzed
-	 again; assume one only where the function assumes it too.  */
-      if ((sem != CES_ASSUME || flag_contracts_p4405)
+	 again; assume one only where the function assumes it too.  Under
+	 -ffast-contracts the predicate is evaluated instead, whatever it
+	 does: the caller has just evaluated it.  */
+      bool evaluated = fast_contracts_evaluate_assumptions_p ();
+      if (!evaluated
+	  && (sem != CES_ASSUME || flag_contracts_p4405)
 	  && (TREE_SIDE_EFFECTS (CONTRACT_CONDITION (contract))
 	      || cp_walk_tree_without_duplicates (&CONTRACT_CONDITION (contract),
 						  postcheck_premise_call_r,
@@ -16237,6 +16274,7 @@ add_postcheck_premises (tree fndecl)
 	continue;
       CONTRACT_EVALUATION_SEMANTIC (contract)
 	= build_contract_semantic_slot (CES_ASSUME, CES_IGNORE);
+      CONTRACT_EVALUATED_ASSUMPTION_P (contract) = evaluated;
       emit_contract_statement (contract);
     }
 }
