@@ -299,6 +299,7 @@ extern void finish_function_outlined_contracts	(tree);
 extern void set_contract_functions		(tree, tree, tree);
 
 extern bool contract_postcheck_entry_p		(tree);
+extern tree contract_pmf_thunk		(tree);
 extern tree contract_postcheck_entry_origin	(tree);
 extern tree contract_postcheck_comdat_group	(tree);
 extern bool contract_postcheck_marker_p		(tree);

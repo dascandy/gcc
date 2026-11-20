@@ -3640,13 +3640,18 @@ removed.  A postcondition whose predicate makes a temporary or contains a
 lambda is not checked this way, and a virtual call checks it instead.
 @end itemize
 
-A call through a pointer to member function checks no preconditions, so
-the assumptions made at the entry of a function that overrides others do
-not hold for it: with @option{-fcontracts-p3097}, calling a virtual
-function with contracts through a pointer to member function with
-arguments that violate the preconditions of every function it overrides
-is undefined.  These optimizations for virtual functions are not made with
-@option{-fcontracts-p4405}.
+With @option{-fcontracts-p3097}, a pointer to member function made from a
+virtual function with a precondition points to a thunk that checks the
+function's preconditions, as a virtual call does, and then dispatches, so
+that a call through it checks them too.  Such a pointer has the layout of
+a pointer to a non-virtual member function.  The thunk has vague linkage,
+so that pointers made from the same function in different translation
+units compare equal; GCC's conversion of such a pointer to a pointer to
+function (@option{-Wno-pmf-conversions}) also yields the thunk.  A pointer
+made from a C-variadic virtual function keeps the usual layout and checks
+nothing, so a C-variadic function that overrides others makes no
+assumption at entry.  These optimizations for virtual functions are not
+made with @option{-fcontracts-p4405}.
 
 Each of these assumptions is made by evaluating the predicate, as
 @code{if (!(@var{predicate})) __builtin_unreachable ();} would, rather than

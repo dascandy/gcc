@@ -6338,6 +6338,11 @@ make_ptrmem_cst (tree type, tree member)
   TREE_TYPE (ptrmem_cst) = type;
   PTRMEM_CST_MEMBER (ptrmem_cst) = member;
   PTRMEM_CST_LOCATION (ptrmem_cst) = input_location;
+  /* -ffast-contracts with P3097: the thunk a pointer to a virtual function
+     with a precondition points to, created now, to be defined with the
+     other contract wrappers.  */
+  if (TREE_CODE (member) == FUNCTION_DECL && DECL_VIRTUAL_P (member))
+    contract_pmf_thunk (member);
   return ptrmem_cst;
 }
 

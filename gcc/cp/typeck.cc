@@ -4635,7 +4635,11 @@ get_member_function_from_ptrfunc (tree *instance_ptrptr, tree function,
 	      /* Extracting the function address from a pmf is only
 		 allowed with -Wno-pmf-conversions. It only works for
 		 pmf constants.  */
-	      e1 = build_addr_func (PTRMEM_CST_MEMBER (function), complain);
+	      tree member = PTRMEM_CST_MEMBER (function);
+	      /* -ffast-contracts with P3097: what the pointer points to.  */
+	      if (tree thunk = contract_pmf_thunk (member))
+		member = thunk;
+	      e1 = build_addr_func (member, complain);
 	      e1 = convert (fntype, e1);
 	      return e1;
 	    }
@@ -9773,7 +9777,13 @@ convert_member_func_to_ptr (tree type, tree expr, tsubst_flags_t complain)
   if (TREE_CODE (intype) == METHOD_TYPE)
     expr = build_addr_func (expr, complain);
   else if (TREE_CODE (expr) == PTRMEM_CST)
-    expr = build_address (PTRMEM_CST_MEMBER (expr));
+    {
+      tree member = PTRMEM_CST_MEMBER (expr);
+      /* -ffast-contracts with P3097: what the pointer points to.  */
+      if (tree thunk = contract_pmf_thunk (member))
+	member = thunk;
+      expr = build_address (member);
+    }
   else
     {
       decl = maybe_dummy_object (TYPE_PTRMEM_CLASS_TYPE (intype), 0);
@@ -11224,9 +11234,13 @@ expand_ptrmemfunc_cst (tree cst, tree *delta, tree *pfn)
   *delta = get_delta_difference (fn_class, ptr_class, /*force=*/0,
 				 /*c_cast_p=*/0, tf_warning_or_error);
 
-  if (!DECL_VIRTUAL_P (fn))
+  /* -ffast-contracts with P3097: a pointer to a virtual function with a
+     precondition points to a thunk that checks it and dispatches, with the
+     layout of a pointer to a non-virtual function of FN's class.  */
+  tree thunk = DECL_VIRTUAL_P (fn) ? contract_pmf_thunk (fn) : NULL_TREE;
+  if (thunk || !DECL_VIRTUAL_P (fn))
     {
-      tree t = build_addr_func (fn, tf_warning_or_error);
+      tree t = build_addr_func (thunk ? thunk : fn, tf_warning_or_error);
       if (TREE_CODE (t) == ADDR_EXPR)
 	SET_EXPR_LOCATION (t, PTRMEM_CST_LOCATION (cst));
       *pfn = convert (TYPE_PTRMEMFUNC_FN_TYPE (type), t);

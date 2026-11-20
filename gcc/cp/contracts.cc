@@ -5050,6 +5050,33 @@ build_contract_wrapper_function (tree fndecl)
   return wrapdecl;
 }
 
+/* -ffast-contracts with P3097: give WRAPDECL, the wrapper of a virtual
+   call of FNDECL, vague linkage under a name of its own that every
+   translation unit gives it, since a pointer to member function made from
+   FNDECL points to it (contract_pmf_thunk), and such pointers compare
+   equal whichever translation unit made them.  Its visibility is
+   FNDECL's.  */
+
+static bool fast_contracts_virtual_p (tree);
+
+static void
+make_virtual_wrapper_comdat (tree fndecl, tree wrapdecl)
+{
+  const char *name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (fndecl));
+  char *nn = concat (name, ".contract_virtual", NULL);
+  SET_DECL_ASSEMBLER_NAME (wrapdecl, get_identifier (nn));
+  free (nn);
+  TREE_PUBLIC (wrapdecl) = true;
+  DECL_EXTERNAL (wrapdecl) = false;
+  DECL_INTERFACE_KNOWN (wrapdecl) = true;
+  DECL_NOT_REALLY_EXTERN (wrapdecl) = true;
+  /* Still as readily inlined into a call as the internal wrapper.  */
+  DECL_DECLARED_INLINE_P (wrapdecl) = true;
+  DECL_VISIBILITY (wrapdecl) = DECL_VISIBILITY (fndecl);
+  DECL_VISIBILITY_SPECIFIED (wrapdecl) = DECL_VISIBILITY_SPECIFIED (fndecl);
+  comdat_linkage (wrapdecl);
+}
+
 /* Return the wrapper of FNDECL whose caller-semantic tuple is TUPLE,
    creating it (and recording TUPLE) if it does not yet exist.  */
 
@@ -5062,8 +5089,54 @@ get_or_create_contract_wrapper_function (tree fndecl, tree tuple)
       wrapdecl = build_contract_wrapper_function (fndecl);
       set_wrapper_for_tuple (fndecl, tuple, wrapdecl);
       set_wrapper_tuple (wrapdecl, tuple);
+      if (!tuple && fast_contracts_virtual_p (fndecl)
+	  && !stdarg_p (TREE_TYPE (fndecl)))
+	make_virtual_wrapper_comdat (fndecl, wrapdecl);
     }
   return wrapdecl;
+}
+
+/* -ffast-contracts with P3097: the thunk that a pointer to member function
+   made from FN points to, or NULL_TREE if it has the usual layout of a
+   pointer to a virtual function: for a virtual function with a
+   precondition, the wrapper of a virtual call (define_one_contract_wrapper_func),
+   which checks the preconditions with their own semantics and dispatches,
+   so that a call through the pointer checks them as a virtual call does,
+   which the functions that override FN rely on (begin_fast_virtual).
+   Not for a C-variadic function, whose wrapper passes the variadic
+   arguments on and so has to be inlined.  The thunk is created when the
+   pointer to member is first made (make_ptrmem_cst), so that it is defined
+   with the other wrappers at the end of the translation unit, and found
+   again when the pointer is lowered (expand_ptrmemfunc_cst), which for a
+   variable's initializer is later.  */
+
+static GTY(()) hash_map<tree, tree, pch_traits> *pmf_thunks = nullptr;
+
+tree
+contract_pmf_thunk (tree fn)
+{
+  if (TREE_CODE (fn) != FUNCTION_DECL
+      || !DECL_VIRTUAL_P (fn)
+      || !fast_contracts_virtual_p (fn)
+      || stdarg_p (TREE_TYPE (fn)))
+    return NULL_TREE;
+  if (tree *thunk = hash_map_safe_get (pmf_thunks, fn))
+    return *thunk;
+  if (processing_template_decl || !handle_caller_contracts_p (fn))
+    return NULL_TREE;
+  bool pre = false;
+  if (tree specs = get_fn_contract_specifiers (DECL_ORIGIN (fn)))
+    for (tree c : tree_vec_range (specs))
+      if (PRECONDITION_P (c))
+	pre = true;
+  if (!pre)
+    return NULL_TREE;
+  tree thunk = get_or_create_contract_wrapper_function (fn, NULL_TREE);
+  if (!thunk || thunk == error_mark_node)
+    return NULL_TREE;
+  hash_map_maybe_create<hm_ggc> (pmf_thunks);
+  pmf_thunks->put (fn, thunk);
+  return thunk;
 }
 
 void
@@ -16365,9 +16438,12 @@ begin_fast_virtual (tree fndecl)
   if (bases.is_empty ())
     return NULL;
 
-  /* F's own preconditions are one disjunct.  */
+  /* F's own preconditions are one disjunct.  A C-variadic function is
+     made no assumption for: a pointer to member function made from it, or
+     from one it overrides, does not check their preconditions
+     (contract_pmf_thunk).  */
   bool own = false;
-  if (handle_contracts_p (fndecl))
+  if (handle_contracts_p (fndecl) && !stdarg_p (TREE_TYPE (fndecl)))
     if (tree specs = get_fn_contract_specifiers (fndecl))
       for (tree c : tree_vec_range (specs))
 	if (PRECONDITION_P (c) && fast_contracts_enforced_p (c, fndecl))
