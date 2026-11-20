@@ -6555,6 +6555,15 @@ static void add_postcheck_marker ();
 static void add_postcheck_premises (tree);
 static bool postcheck_split_body_p (tree);
 
+struct fast_virtual;
+static fast_virtual *begin_fast_virtual (tree);
+static void fast_virtual_entry (fast_virtual *);
+static void fast_virtual_posts (fast_virtual *);
+static bool fast_virtual_posts_may_throw_p (fast_virtual *);
+static bool fast_virtual_post_p (fast_virtual *);
+static void place_fast_virtual_alone (fast_virtual *);
+static void end_fast_virtual (fast_virtual *);
+
 void
 maybe_apply_function_contracts (tree fndecl)
 {
@@ -6571,6 +6580,20 @@ maybe_apply_function_contracts (tree fndecl)
       return;
     }
 
+  /* -ffast-contracts with P3097: what a virtual function adds for the
+     functions it overrides (begin_fast_virtual), by itself when it has no
+     active contracts of its own.  */
+  fast_virtual *fv = begin_fast_virtual (fndecl);
+  if (fv
+      && (!handle_contracts_p (fndecl)
+	  || (!has_active_preconditions (fndecl)
+	      && !has_active_postconditions (fndecl))))
+    {
+      place_fast_virtual_alone (fv);
+      end_fast_virtual (fv);
+      return;
+    }
+
   if (!handle_contracts_p (fndecl))
     /* We did nothing and the original function body statement list will be
        popped by our caller.  */
@@ -6580,6 +6603,7 @@ maybe_apply_function_contracts (tree fndecl)
   bool do_post = has_active_postconditions (fndecl);
   if (!do_pre && !do_post)
     return;
+  bool fv_post = fast_virtual_post_p (fv);
 
   /* If the function is noexcept, the user's written body will normally be
      wrapped in a MUST_NOT_THROW expression.  In that case we leave the
@@ -6691,7 +6715,9 @@ maybe_apply_function_contracts (tree fndecl)
      P4298 noexcept_ variant -- now carry no cleanup at all, where before they
      carried one that could never run.  */
   const bool wrap_checks_directly
-    = !unified_retval_cleanup && postconditions_may_throw_p (fndecl);
+    = (!unified_retval_cleanup
+       && (postconditions_may_throw_p (fndecl)
+	   || fast_virtual_posts_may_throw_p (fv)));
 
   tree compound_stmt = begin_compound_stmt (0);
   current_binding_level->artificial = true;
@@ -6703,6 +6729,12 @@ maybe_apply_function_contracts (tree fndecl)
 
   if (overrides)
     start_override_shadows (overrides, cur_stmt_list);
+
+  /* Ahead of the precondition checks: the assumption that the
+     preconditions of one of the functions a virtual function overrides
+     hold.  */
+  if (fv)
+    fast_virtual_entry (fv);
 
   /* With a postcheck entry point, the precondition checks come first and
      the entry point right after them, marked for
@@ -6718,7 +6750,7 @@ maybe_apply_function_contracts (tree fndecl)
 	    && has_postcondition_captures_p (fndecl)));
 
   /* If we have a pre, but not a post, then just emit that and we are done.  */
-  if (!do_post)
+  if (!do_post && !fv_post)
     {
       apply_preconditions (fndecl);
       if (postcheck_split)
@@ -6728,6 +6760,8 @@ maybe_apply_function_contracts (tree fndecl)
 	}
       add_stmt (fnbody);
       finish_compound_stmt (compound_stmt);
+      if (fv)
+	end_fast_virtual (fv);
       return;
     }
 
@@ -6783,8 +6817,11 @@ maybe_apply_function_contracts (tree fndecl)
 	 and the returned object exists by now, so they carry a cleanup that
 	 destroys it.  */
       tree post_stmts = push_stmt_list ();
-      apply_postconditions (fndecl);
+      if (do_post)
+	apply_postconditions (fndecl);
       add_override_base_post_obligations ();
+      if (fv)
+	fast_virtual_posts (fv);
       post_stmts = pop_stmt_list (post_stmts);
       TREE_OPERAND (eh_else, 0) = push_stmt_list ();
       add_stmt (wrap_checks_directly
@@ -6806,8 +6843,11 @@ maybe_apply_function_contracts (tree fndecl)
   else
     {
       tree post_stmts = push_stmt_list ();
-      apply_postconditions (fndecl);
+      if (do_post)
+	apply_postconditions (fndecl);
       add_override_base_post_obligations ();
+      if (fv)
+	fast_virtual_posts (fv);
       post_stmts = pop_stmt_list (post_stmts);
       add_stmt (wrap_checks_directly
 		? wrap_postconditions_in_retval_cleanup (fndecl, post_stmts)
@@ -6840,6 +6880,8 @@ maybe_apply_function_contracts (tree fndecl)
       delete postcondition_capture_selections;
       postcondition_capture_selections = NULL;
     }
+  if (fv)
+    end_fast_virtual (fv);
 }
 
 /* SP is a parameter (or result placeholder) of the guarded function and DP
@@ -7764,6 +7806,105 @@ update_contract_arguments (tree srcdecl, tree destdecl)
     }
 }
 
+/* -ffast-contracts with P3097: true if FN, a function, is a virtual
+   function whose contracts -ffast-contracts divides between its callers
+   and the functions that override it: every call checks the preconditions
+   of the function it names with their own semantics, a virtual call
+   assumes its postconditions, and each function that overrides it
+   assumes, at entry, that a call through one of the functions it
+   overrides checked theirs, and checks their postconditions
+   (begin_fast_virtual).  Not with -fcontracts-p4405, whose analysis
+   evaluations work from the contracts as P3097 places them.  */
+
+static bool
+fast_contracts_virtual_p (tree fn)
+{
+  return (flag_fast_contracts && flag_contracts_p3097
+	  && !flag_contracts_p4405 && DECL_VIRTUAL_P (fn));
+}
+
+/* -ffast-contracts: true if CONTRACT, of FN, is checked with a semantic,
+   chosen at compile time, that does not let the call proceed after a
+   violation.  */
+
+static bool
+fast_contracts_enforced_p (tree contract, tree fn)
+{
+  if (CONTRACT_CONDITION (contract) == error_mark_node
+      || CONTRACT_CONDITION_DEFERRED_P (contract))
+    return false;
+  contract_evaluation_semantic sem
+    = ensure_evaluation_semantic (contract, fn, /*in_ce=*/false);
+  if (contract_dynamic_name (contract))
+    return false;
+  return sem == CES_ENFORCE || sem == CES_QUICK || sem == CES_NOEXCEPT_ENFORCE;
+}
+
+/* cp_walk_tree callback for fast_contracts_transferable_p: stop at what a
+   predicate of an overridden function cannot be rewritten with in the
+   function that overrides it (override_remap_r), DATA being the contract
+   and its function.  */
+
+static tree
+fast_contracts_transferable_r (tree *tp, int *walk_subtrees, void *data)
+{
+  tree contract = ((tree *) data)[0];
+  tree fn = ((tree *) data)[1];
+  tree t = *tp;
+  if (TYPE_P (t))
+    {
+      *walk_subtrees = 0;
+      return NULL_TREE;
+    }
+  switch (TREE_CODE (t))
+    {
+    case SAVE_EXPR:
+    case TARGET_EXPR:
+    case AGGR_INIT_EXPR:
+    case BIND_EXPR:
+    case STATEMENT_LIST:
+    case DECL_EXPR:
+    case STMT_EXPR:
+    case LAMBDA_EXPR:
+      return t;
+    case PARM_DECL:
+      *walk_subtrees = 0;
+      if (is_this_parameter (t)
+	  || (POSTCONDITION_P (contract)
+	      && t == POSTCONDITION_IDENTIFIER (contract)))
+	return NULL_TREE;
+      for (tree parm = FUNCTION_FIRST_USER_PARM (fn); parm;
+	   parm = DECL_CHAIN (parm))
+	if (parm == t)
+	  return NULL_TREE;
+      return t;
+    default:
+      return NULL_TREE;
+    }
+}
+
+/* -ffast-contracts with P3097: true if the predicate of CONTRACT, a
+   contract of the virtual function FN, can be evaluated in each function
+   that overrides FN, in its terms (fast_virtual_rewrite).  A virtual call
+   assumes only the postconditions that can, since only those are checked
+   by whatever it dispatches to.  */
+
+static bool
+fast_contracts_transferable_p (tree contract, tree fn)
+{
+  tree cond = CONTRACT_CONDITION (contract);
+  if (cond == error_mark_node || CONTRACT_CONDITION_DEFERRED_P (contract))
+    return false;
+  if (POSTCONDITION_P (contract))
+    if (tree r = POSTCONDITION_IDENTIFIER (contract))
+      if (DECL_P (r) && TREE_ADDRESSABLE (r))
+	return false;
+  tree data[2] = { contract, fn };
+  return !cp_walk_tree_without_duplicates (&cond,
+					   fast_contracts_transferable_r,
+					   data);
+}
+
 /* Compute the ordered caller-side semantic tuple for the contracts of the
    callee FNDECL, resolved for the call site (CALLER_LOC, CALLER_FNDECL).
    Returns a TREE_LIST whose Nth TREE_VALUE is an INTEGER_CST giving the
@@ -7800,6 +7941,24 @@ compute_caller_semantic_tuple (tree fndecl, location_t caller_loc,
 				   caller_loc, caller_fndecl, add_ignore);
       if (analyses)
 	analyses->safe_push (r.analysis);
+      /* -ffast-contracts with P3097: a call that names a virtual function
+	 without dispatching checks its preconditions with their own
+	 semantics, as a virtual call does, so that the functions that
+	 override it may assume the preconditions of one of the functions
+	 they override hold (begin_fast_virtual).  One whose semantic is
+	 chosen at run time is resolved as before.  */
+      if (PRECONDITION_P (contract)
+	  && fast_contracts_virtual_p (DECL_ORIGIN (fndecl)))
+	{
+	  contract_evaluation_semantic sem
+	    = ensure_evaluation_semantic (contract, DECL_ORIGIN (fndecl),
+					  /*in_ce=*/false);
+	  if (!contract_dynamic_name (contract))
+	    {
+	      r.semantic = sem;
+	      r.dyn_name = NULL;
+	    }
+	}
       /* When the caller-side resolution is dynamic, carry the descriptor in
 	 the tuple element's TREE_PURPOSE so it can key the wrapper and be
 	 baked into the wrapper's copied contract.  The layout matches the
@@ -8346,7 +8505,11 @@ define_one_contract_wrapper_func (tree fndecl, tree wrapdecl)
 	{
 	  tree contract = TREE_VEC_ELT (specs, position);
 	  if (is_virtual
-	      ? !fast_contracts_assumed_post_p (contract, DECL_ORIGIN (fndecl))
+	      ? (!fast_contracts_virtual_p (DECL_ORIGIN (fndecl))
+		 || !fast_contracts_assumed_post_p (contract,
+						    DECL_ORIGIN (fndecl))
+		 || !fast_contracts_transferable_p (contract,
+						    DECL_ORIGIN (fndecl)))
 	      : !wrapper_assumes_post_p (wrapdecl, fndecl, position, contract))
 	    continue;
 	  tree copy = TREE_VEC_ELT (wrap_specs, position);
@@ -16082,6 +16245,438 @@ place_override_shadows_alone (override_shadows *ov)
     add_override_base_post_obligations ();
   TREE_OPERAND (try_fin, 1) = pop_stmt_list (TREE_OPERAND (try_fin, 1));
   finish_compound_stmt (compound_stmt);
+}
+
+/* -ffast-contracts with P3097: the contracts of a virtual function F, the
+   function being finished, and of the functions F overrides.
+
+   Every call that can reach F checks the preconditions of the function it
+   names with their own semantics: a virtual call through B::f, one of the
+   functions F overrides, checks B::f's, and a call that names F itself,
+   virtual or not, checks F's (compute_caller_semantic_tuple).  So at
+   entry one of those sets of preconditions holds, and F assumes, ahead of
+   its own precondition checks, that the disjunction of them does -- of the
+   ones each function checks with a semantic, chosen at compile time, that
+   does not let the call proceed after a violation.  When F widens the
+   preconditions of every function it overrides, as substitutability
+   requires, the disjunction is F's own preconditions, and its checks go.
+   A call through a pointer to member function checks nothing, and is not
+   accounted for.
+
+   A virtual call through B::f assumes B::f's postconditions
+   (define_one_contract_wrapper_func), so F checks them: those whose
+   semantic enforces or assumes them and whose predicate can be rewritten
+   in F (fast_contracts_transferable_p), after its own postconditions, on
+   a return from a call that may have come through B::f -- one where
+   B::f's preconditions held at entry.  A destructor needs none of this:
+   the destructor of each base class runs after it and checks its own
+   postconditions.
+
+   A predicate of B::f is rewritten in F's terms as for the override
+   shadows of D4405 (override_remap_r): `this' is F's, converted to the
+   base class B::f is found in -- once per subobject when B::f's contract
+   assertions name `this' -- the other parameters are F's, and B::f's result
+   binding is F's result, converted to B::f's return type for a covariant
+   return.  In a postcondition, a parameter F receives by value, but not by
+   invisible reference, is its value at entry, as in the virtual call's
+   wrapper, whatever F does to it.  */
+
+struct fast_virtual_iface
+{
+  /* B::f, and the base class (in F's class) it is found in.  */
+  tree base;
+  tree binfo;
+  /* F's `this' converted to BINFO.  */
+  tree this_expr;
+  /* The conjunction of B::f's enforced preconditions that can be
+     rewritten, in F's terms at entry, or NULL_TREE if there are none.  */
+  tree pres;
+  /* B::f's postconditions to check, a TREE_LIST.  */
+  tree posts;
+};
+
+struct fast_virtual
+{
+  tree fndecl;
+  /* True if F has an assumption to make at entry.  */
+  bool assume;
+  /* True if F checks postconditions of functions it overrides.  */
+  bool post;
+  auto_vec<fast_virtual_iface> ifaces;
+  /* The checks of those postconditions, built at entry, a TREE_LIST.  */
+  tree checks;
+};
+
+/* The predicate of CONTRACT, a contract of BASE, rewritten in the terms of
+   the function being finished, F: with THIS_EXPR for `this' and PARMS,
+   which maps BASE's parameters, or NULL_TREE if it cannot be.  */
+
+static tree
+fast_virtual_rewrite (tree contract, tree this_expr,
+		      hash_map<tree, tree> &parms)
+{
+  tree pred = unshare_expr (CONTRACT_CONDITION (contract));
+  override_remap_data data = { &parms, this_expr, false, NULL, NULL };
+  if (cp_walk_tree (&pred, override_remap_r, &data, NULL))
+    return NULL_TREE;
+  return pred;
+}
+
+/* A new variable of TYPE in the body of FNDECL, initialized to INIT.  */
+
+static tree
+fast_virtual_local (tree fndecl, tree type, tree init)
+{
+  static unsigned counter;
+  char name[32];
+  sprintf (name, "__contract_fast_%u", counter++);
+  tree var = build_decl (DECL_SOURCE_LOCATION (fndecl), VAR_DECL,
+			 get_identifier (name), cv_unqualified (type));
+  DECL_ARTIFICIAL (var) = 1;
+  DECL_IGNORED_P (var) = 1;
+  TREE_USED (var) = 1;
+  DECL_CONTEXT (var) = fndecl;
+  layout_decl (var, 0);
+  pushdecl (var);
+  add_decl_expr (var);
+  finish_expr_stmt (build2 (INIT_EXPR, TREE_TYPE (var), var, init));
+  return var;
+}
+
+/* The contracts of FNDECL, the function being finished, and of the
+   functions it overrides, under -ffast-contracts with P3097, or null if
+   there is nothing to add to it.  */
+
+static fast_virtual *
+begin_fast_virtual (tree fndecl)
+{
+  if (!fast_contracts_virtual_p (fndecl)
+      || flag_syntax_only
+      || processing_template_decl
+      || DECL_CLONED_FUNCTION_P (fndecl)
+      || DECL_COROUTINE_P (fndecl)
+      || CONTRACT_HELPER (fndecl) != ldf_contract_none
+      || DECL_IS_WRAPPER_FN_P (fndecl))
+    return NULL;
+
+  auto_vec<tree> bases, binfos;
+  tree ctx = DECL_CONTEXT (fndecl);
+  collect_overridden_functions (ctx, TYPE_BINFO (ctx), fndecl, bases, binfos);
+  if (bases.is_empty ())
+    return NULL;
+
+  /* F's own preconditions are one disjunct.  */
+  bool own = false;
+  if (handle_contracts_p (fndecl))
+    if (tree specs = get_fn_contract_specifiers (fndecl))
+      for (tree c : tree_vec_range (specs))
+	if (PRECONDITION_P (c) && fast_contracts_enforced_p (c, fndecl))
+	  own = true;
+
+  fast_virtual *fv = new fast_virtual;
+  fv->fndecl = fndecl;
+  fv->assume = own;
+  fv->post = false;
+  fv->checks = NULL_TREE;
+  bool post_ok = !DECL_DESTRUCTOR_P (fndecl);
+  for (unsigned i = 0; i < bases.length (); ++i)
+    {
+      tree base = bases[i];
+      /* A pure virtual function or an uninstantiated template has had
+	 nothing substitute its contracts yet, as for a wrapper.  */
+      maybe_instantiate_contracts (base, /*for_wrapper=*/true);
+      tree specs = get_fn_contract_specifiers (base);
+      fast_virtual_iface iface = {};
+      iface.base = base;
+      iface.binfo = binfos[i];
+      iface.this_expr = build_base_path (PLUS_EXPR, DECL_ARGUMENTS (fndecl),
+					 binfos[i], /*nonnull=*/1, tf_none);
+      if (iface.this_expr == error_mark_node
+	  || (specs && contract_any_deferred_p (specs)))
+	{
+	  fv->assume = false;
+	  continue;
+	}
+      hash_map<tree, tree> parms;
+      map_override_parms (base, fndecl, parms);
+      tree *last = &iface.posts;
+      if (specs)
+	for (tree c : tree_vec_range (specs))
+	  {
+	    if (PRECONDITION_P (c)
+		&& fast_contracts_enforced_p (c, base)
+		&& fast_contracts_transferable_p (c, base))
+	      if (tree pred = fast_virtual_rewrite (c, iface.this_expr, parms))
+		iface.pres = (iface.pres
+			      ? build2 (TRUTH_ANDIF_EXPR, boolean_type_node,
+					iface.pres, pred)
+			      : pred);
+	    if (post_ok
+		&& POSTCONDITION_P (c)
+		&& fast_contracts_assumed_post_p (c, base)
+		&& fast_contracts_transferable_p (c, base))
+	      {
+		*last = build_tree_list (NULL_TREE, c);
+		last = &TREE_CHAIN (*last);
+		fv->post = true;
+	      }
+	  }
+      /* A call through B::f that guarantees nothing makes the
+	 disjunction true.  */
+      if (!iface.pres)
+	fv->assume = false;
+      fv->ifaces.safe_push (iface);
+    }
+  if (!fv->assume && !fv->post)
+    {
+      delete fv;
+      return NULL;
+    }
+  return fv;
+}
+
+/* What FV's function's result is to the postconditions of B::f, the
+   function of IFACE: the result itself, or for a covariant return, the
+   result converted to B::f's return type, as the covariant thunk converts
+   it; NULL_TREE if it cannot be.  */
+
+static tree
+fast_virtual_result (fast_virtual *fv, fast_virtual_iface &iface)
+{
+  tree fndecl = fv->fndecl;
+  tree res = DECL_RESULT (fndecl);
+  if (!res)
+    return NULL_TREE;
+  tree dtype = TREE_TYPE (TREE_TYPE (fndecl));
+  tree btype = TREE_TYPE (TREE_TYPE (iface.base));
+  if (same_type_ignoring_top_level_qualifiers_p (dtype, btype))
+    return res;
+  bool ref = TYPE_REF_P (dtype);
+  if (ref ? !TYPE_REF_P (btype) : !(TYPE_PTR_P (dtype) && TYPE_PTR_P (btype)))
+    return NULL_TREE;
+  tree binfo = lookup_base (TYPE_MAIN_VARIANT (TREE_TYPE (dtype)),
+			    TYPE_MAIN_VARIANT (TREE_TYPE (btype)),
+			    ba_unique, NULL, tf_none);
+  if (!binfo || binfo == error_mark_node)
+    return NULL_TREE;
+  tree ptr = (ref ? build_nop (build_pointer_type (TREE_TYPE (dtype)), res)
+	      : res);
+  tree conv = build_base_path (PLUS_EXPR, ptr, binfo, /*nonnull=*/ref,
+			       tf_none);
+  if (conv == error_mark_node)
+    return NULL_TREE;
+  return build_nop (btype, conv);
+}
+
+/* At the entry of FV's function, ahead of its own precondition checks: the
+   assumption of the disjunction of preconditions, and what the checks of
+   the postconditions of the functions it overrides need -- the values at
+   entry of the parameters passed by value, and per function whether its
+   preconditions held -- along with those checks, for fast_virtual_posts
+   to emit.  */
+
+static void
+fast_virtual_entry (fast_virtual *fv)
+{
+  tree fndecl = fv->fndecl;
+
+  if (fv->assume)
+    {
+      tree own = NULL_TREE, carrier = NULL_TREE;
+      if (tree copies = copy_contracts (fndecl, cmk_pre))
+	for (tree c : tree_vec_range (copies))
+	  if (PRECONDITION_P (c) && fast_contracts_enforced_p (c, fndecl))
+	    {
+	      remap_dummy_this (fndecl, &CONTRACT_CONDITION (c));
+	      if (CONTRACT_CONDITION (c) == error_mark_node)
+		continue;
+	      tree pred = unshare_expr (CONTRACT_CONDITION (c));
+	      own = (own ? build2 (TRUTH_ANDIF_EXPR, boolean_type_node,
+				   own, pred) : pred);
+	      if (!carrier)
+		carrier = c;
+	    }
+      if (own)
+	{
+	  tree any = own;
+	  for (fast_virtual_iface &iface : fv->ifaces)
+	    any = build2 (TRUTH_ORIF_EXPR, boolean_type_node, any,
+			  unshare_expr (iface.pres));
+	  tree a = copy_node (carrier);
+	  CONTRACT_CONDITION (a) = any;
+	  CONTRACT_EVALUATION_SEMANTIC (a)
+	    = build_contract_semantic_slot (CES_ASSUME, CES_IGNORE);
+	  CONTRACT_CONSTEXPR_EVALUATION_SEMANTIC (a)
+	    = build_int_cst (uint16_type_node, CES_IGNORE);
+	  CONTRACT_DYNAMIC (a) = NULL_TREE;
+	  CONTRACT_EVALUATED_ASSUMPTION_P (a) = true;
+	  emit_contract_statement (a);
+	}
+    }
+
+  if (!fv->post)
+    return;
+
+  /* The parameters passed by value, at entry.  */
+  hash_map<tree, tree> snapshots;
+  for (tree parm = FUNCTION_FIRST_USER_PARM (fndecl); parm;
+       parm = DECL_CHAIN (parm))
+    {
+      tree type = TREE_TYPE (parm);
+      if (!TYPE_REF_P (type) && !TREE_ADDRESSABLE (type))
+	snapshots.put (parm, fast_virtual_local (fndecl, type, parm));
+    }
+
+  tree *last = &fv->checks;
+  for (fast_virtual_iface &iface : fv->ifaces)
+    {
+      if (!iface.posts)
+	continue;
+      /* Whether the call may have come through B::f.  */
+      tree via = (iface.pres
+		  ? fast_virtual_local (fndecl, boolean_type_node,
+					unshare_expr (iface.pres))
+		  : NULL_TREE);
+      hash_map<tree, tree> parms;
+      map_override_parms (iface.base, fndecl, parms);
+      for (auto it = parms.begin (); it != parms.end (); ++it)
+	if (tree *snap = snapshots.get ((*it).second))
+	  (*it).second = *snap;
+      tree result = NULL_TREE;
+      for (tree t = iface.posts; t; t = TREE_CHAIN (t))
+	{
+	  tree c = TREE_VALUE (t);
+	  tree r = POSTCONDITION_IDENTIFIER (c);
+	  bool named = r && r != error_mark_node && TREE_CODE (r) == PARM_DECL;
+	  if (named)
+	    {
+	      if (!result)
+		result = fast_virtual_result (fv, iface);
+	      /* Never for a return type an override can have.  */
+	      if (!result)
+		continue;
+	      parms.put (r, result);
+	    }
+	  tree pred = fast_virtual_rewrite (c, iface.this_expr, parms);
+	  if (!pred)
+	    continue;
+	  tree check = copy_node (c);
+	  CONTRACT_CONDITION (check)
+	    = (via
+	       ? build2 (TRUTH_ORIF_EXPR, boolean_type_node,
+			 build1 (TRUTH_NOT_EXPR, boolean_type_node, via), pred)
+	       : pred);
+	  CONTRACT_EVALUATION_SEMANTIC (check)
+	    = build_contract_semantic_slot
+		(ensure_evaluation_semantic (c, iface.base, /*in_ce=*/false),
+		 CES_IGNORE);
+	  /* Constant evaluation of a virtual call checks them in the
+	     call's wrapper.  */
+	  CONTRACT_CONSTEXPR_EVALUATION_SEMANTIC (check)
+	    = build_int_cst (uint16_type_node, CES_IGNORE);
+	  CONTRACT_DYNAMIC (check) = NULL_TREE;
+	  CONTRACT_EVALUATED_ASSUMPTION_P (check) = false;
+	  POSTCONDITION_IDENTIFIER (check) = NULL_TREE;
+	  *last = build_tree_list (NULL_TREE, check);
+	  last = &TREE_CHAIN (*last);
+	}
+    }
+}
+
+/* After the postcondition checks of FV's function, those of the
+   postconditions of the functions it overrides.  */
+
+static void
+fast_virtual_posts (fast_virtual *fv)
+{
+  for (tree t = fv->checks; t; t = TREE_CHAIN (t))
+    emit_contract_statement (TREE_VALUE (t));
+}
+
+/* True if FV's function checks postconditions of functions it
+   overrides.  */
+
+static bool
+fast_virtual_post_p (fast_virtual *fv)
+{
+  return fv && fv->post;
+}
+
+/* True if the checks fast_virtual_posts emits may exit via an
+   exception.  */
+
+static bool
+fast_virtual_posts_may_throw_p (fast_virtual *fv)
+{
+  return fv && fv->post && flag_exceptions;
+}
+
+/* Place what FV adds to its function, which has no active contracts of
+   its own (maybe_apply_function_contracts): in a block, as
+   maybe_apply_function_contracts builds one, what fast_virtual_entry
+   places, then the body, in a try/finally whose normal exit checks the
+   postconditions of the functions it overrides.  */
+
+static void
+place_fast_virtual_alone (fast_virtual *fv)
+{
+  tree fndecl = fv->fndecl;
+  tree fnbody;
+  tree m_n_t_expr = (TYPE_NOEXCEPT_P (TREE_TYPE (fndecl))
+		     ? expr_first (DECL_SAVED_TREE (fndecl)) : NULL_TREE);
+  if (m_n_t_expr && m_n_t_expr != error_mark_node
+      && TREE_CODE (m_n_t_expr) == MUST_NOT_THROW_EXPR)
+    {
+      fnbody = TREE_OPERAND (m_n_t_expr, 0);
+      TREE_OPERAND (m_n_t_expr, 0) = push_stmt_list ();
+    }
+  else
+    {
+      fnbody = DECL_SAVED_TREE (fndecl);
+      DECL_SAVED_TREE (fndecl) = push_stmt_list ();
+    }
+
+  tree compound_stmt = begin_compound_stmt (0);
+  current_binding_level->artificial = true;
+  fast_virtual_entry (fv);
+  if (!fv->checks)
+    {
+      add_stmt (fnbody);
+      finish_compound_stmt (compound_stmt);
+      return;
+    }
+  tree try_fin = build_stmt (UNKNOWN_LOCATION, TRY_FINALLY_EXPR, fnbody,
+			     NULL_TREE);
+  add_stmt (try_fin);
+  TREE_OPERAND (try_fin, 1) = push_stmt_list ();
+  tree post_stmts = push_stmt_list ();
+  fast_virtual_posts (fv);
+  post_stmts = pop_stmt_list (post_stmts);
+  post_stmts = wrap_postconditions_in_retval_cleanup (fndecl, post_stmts);
+  if (flag_exceptions && !type_noexcept_p (TREE_TYPE (fndecl)))
+    {
+      /* Nothing on the exceptional path.  */
+      tree eh_else = build_stmt (UNKNOWN_LOCATION, EH_ELSE_EXPR, NULL_TREE,
+				 NULL_TREE);
+      add_stmt (eh_else);
+      TREE_OPERAND (eh_else, 0) = push_stmt_list ();
+      add_stmt (post_stmts);
+      TREE_OPERAND (eh_else, 0) = pop_stmt_list (TREE_OPERAND (eh_else, 0));
+      TREE_OPERAND (eh_else, 1) = push_stmt_list ();
+      TREE_OPERAND (eh_else, 1) = pop_stmt_list (TREE_OPERAND (eh_else, 1));
+    }
+  else
+    add_stmt (post_stmts);
+  TREE_OPERAND (try_fin, 1) = pop_stmt_list (TREE_OPERAND (try_fin, 1));
+  finish_compound_stmt (compound_stmt);
+}
+
+/* Done with FV.  */
+
+static void
+end_fast_virtual (fast_virtual *fv)
+{
+  delete fv;
 }
 
 /* Postcheck entry points (-fcontract-postcheck-entry).

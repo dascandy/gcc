@@ -3604,14 +3604,49 @@ applies to postconditions that the function itself enforces (with
 assumes, with an evaluation semantic chosen at compile time.  A virtual
 call (@option{-fcontracts-p3097}) likewise assumes, rather than checks,
 the postconditions of the function it names that their semantic enforces
-or assumes.  It does not apply to a postcondition with captures or to a
+or assumes, except ones that the functions overriding it cannot check
+(see below).  It does not apply to a postcondition with captures or to a
 call through a function pointer.
 
 @item
 At the second entry point of a function (see
-@option{-fcontract-postcheck-entry}), GCC assumes each precondition that the function enforces or assumes, including one whose
-predicate calls a function or has side effects.
+@option{-fcontract-postcheck-entry}), GCC assumes each precondition that
+the function enforces or assumes, including one whose predicate calls a
+function or has side effects.
+
+@item
+With @option{-fcontracts-p3097}, a function that overrides others assumes
+at entry, ahead of checking its own preconditions, that its own
+preconditions or those of one of the functions it overrides hold: every
+call that can reach it checks those of the function it names, also a call
+that does not dispatch, which checks them with their own semantics.  Only
+preconditions checked with @code{enforce}, @code{quick_enforce} or
+@code{noexcept_enforce} count.  Where the function widens the
+preconditions of every function it overrides, its own checks of them can
+be removed.  A function or destructor that has no enforced preconditions
+of its own, or that overrides one without, assumes nothing.
+
+@item
+With @option{-fcontracts-p3097}, a function that overrides others, other
+than a destructor, checks the postconditions of each function it overrides
+that a virtual call through that function assumes, after its own, on a
+return from a call whose arguments satisfied that function's
+preconditions at entry, and so on every return from a call that came
+through it.  Such a postcondition is therefore also checked for a call
+that came through another function, or named the overriding function
+itself, if its arguments happened to satisfy the preconditions; where the
+overriding function narrows the postconditions, these checks can be
+removed.  A postcondition whose predicate makes a temporary or contains a
+lambda is not checked this way, and a virtual call checks it instead.
 @end itemize
+
+A call through a pointer to member function checks no preconditions, so
+the assumptions made at the entry of a function that overrides others do
+not hold for it: with @option{-fcontracts-p3097}, calling a virtual
+function with contracts through a pointer to member function with
+arguments that violate the preconditions of every function it overrides
+is undefined.  These optimizations for virtual functions are not made with
+@option{-fcontracts-p4405}.
 
 Each of these assumptions is made by evaluating the predicate, as
 @code{if (!(@var{predicate})) __builtin_unreachable ();} would, rather than
