@@ -3601,9 +3601,11 @@ After the call, a caller that checks a function's preconditions assumes
 each postcondition of the function that it does not check itself.  This
 applies to postconditions that the function itself enforces (with
 @code{enforce}, @code{quick_enforce} or @code{noexcept_enforce}) or
-assumes, with an evaluation semantic chosen at compile time.  It does not
-apply to a postcondition with captures, a call through a function pointer,
-or a virtual call.
+assumes, with an evaluation semantic chosen at compile time.  A virtual
+call (@option{-fcontracts-p3097}) likewise assumes, rather than checks,
+the postconditions of the function it names that their semantic enforces
+or assumes.  It does not apply to a postcondition with captures or to a
+call through a function pointer.
 
 @item
 At the second entry point of a function (see

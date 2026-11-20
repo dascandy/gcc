@@ -8327,28 +8327,36 @@ define_one_contract_wrapper_func (tree fndecl, tree wrapdecl)
   set_fn_contract_specifiers (wrapdecl, wrap_specs);
 
   /* -ffast-contracts: after the call, the wrapper assumes each
-     postcondition that it does not check and the callee does, as
-     [[assume (P)]] would; see wrapper_assumes_post_p.  With every
-     postcondition copied, the copies are at the positions of the
-     originals.  Constant evaluation leaves the postcondition to the
-     callee.  */
-  if (flag_fast_contracts && !is_virtual && check_post && wrap_specs
+     postcondition that it does not check and the callee does; see
+     wrapper_assumes_post_p.  The wrapper of a virtual call, which would
+     check the postconditions of the function it names with their own
+     semantics (P3097), assumes those that semantic enforces or assumes
+     instead: under -ffast-contracts, the function that the call
+     dispatches to checks them.  With every postcondition copied, the
+     copies are at the positions of the originals.  Constant evaluation
+     leaves the postcondition to the callee, except in a virtual call's
+     wrapper, which keeps checking it there.  */
+  if (flag_fast_contracts && check_post && wrap_specs
       && !contract_any_deferred_p (wrap_specs))
     {
       tree specs = get_fn_contract_specifiers (DECL_ORIGIN (fndecl));
       gcc_checking_assert (TREE_VEC_LENGTH (specs)
 			   == TREE_VEC_LENGTH (wrap_specs));
       for (int position = 0; position < TREE_VEC_LENGTH (specs); position++)
-	if (wrapper_assumes_post_p (wrapdecl, fndecl, position,
-				    TREE_VEC_ELT (specs, position)))
-	  {
-	    tree copy = TREE_VEC_ELT (wrap_specs, position);
-	    CONTRACT_EVALUATION_SEMANTIC (copy)
-	      = build_int_cst (uint16_type_node, CES_ASSUME);
+	{
+	  tree contract = TREE_VEC_ELT (specs, position);
+	  if (is_virtual
+	      ? !fast_contracts_assumed_post_p (contract, DECL_ORIGIN (fndecl))
+	      : !wrapper_assumes_post_p (wrapdecl, fndecl, position, contract))
+	    continue;
+	  tree copy = TREE_VEC_ELT (wrap_specs, position);
+	  CONTRACT_EVALUATION_SEMANTIC (copy)
+	    = build_int_cst (uint16_type_node, CES_ASSUME);
+	  if (!is_virtual)
 	    CONTRACT_CONSTEXPR_EVALUATION_SEMANTIC (copy)
 	      = build_int_cst (uint16_type_node, CES_IGNORE);
-	    CONTRACT_EVALUATED_ASSUMPTION_P (copy) = true;
-	  }
+	  CONTRACT_EVALUATED_ASSUMPTION_P (copy) = true;
+	}
     }
 
   /* P4298: unlike build_contract_condition_function's outlined .pre/.post
