@@ -6955,8 +6955,10 @@ remap_contract (tree src, tree dst, tree contract, bool duplicate_p)
   /* A lambda's capture proxy is a local whose DECL_VALUE_EXPR reads the
      capture through the closure parameter.  Copying the proxy keeps that
      expression, still naming SRC's parameter; replace the proxy by its
-     value expression, remapped like the rest.  */
-  if (!duplicate_p && LAMBDA_FUNCTION_P (src))
+     value expression, remapped like the rest.  A contract wrapper's copy
+     is made as a duplicate (copy_and_remap_contracts), but the wrapper is
+     another function, whose closure parameter is its own.  */
+  if ((!duplicate_p || DECL_IS_WRAPPER_FN_P (dst)) && LAMBDA_FUNCTION_P (src))
     {
       hash_set<tree> proxies;
       auto collect = [] (tree *tp, int *, void *data) -> tree
@@ -7094,6 +7096,15 @@ copy_and_remap_contracts (tree dest, tree source,
 	 condition as invalid so only need to check that.  */
       if (CONTRACT_CONDITION (stmt) != error_mark_node)
 	remap_contract (source, dest, stmt, /*duplicate_p=*/true);
+
+      /* The copy keeps SOURCE's local variables (retain_decl), but the
+	 temporaries of a wrapper's predicate are its own: SOURCE's body,
+	 which evaluates the same predicate, has them in its binding.  */
+      if (DECL_IS_WRAPPER_FN_P (dest)
+	  && CONTRACT_CONDITION (stmt) != error_mark_node
+	  && TREE_CODE (CONTRACT_CONDITION (stmt)) != DEFERRED_PARSE)
+	CONTRACT_CONDITION (stmt)
+	  = break_out_target_exprs (CONTRACT_CONDITION (stmt));
 
       if (TREE_CODE (stmt) == POSTCONDITION_STMT)
 	{
