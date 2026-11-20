@@ -6904,7 +6904,14 @@ remap_contract (tree src, tree dst, tree contract, bool duplicate_p)
   gcc_checking_assert (TREE_CODE (dst) == FUNCTION_DECL);
 
   int src_num_artificial_args = num_artificial_parms_for (src);
-  int dst_num_artificial_args = num_artificial_parms_for (dst);
+  /* A contract wrapper has the parameters of the function it wraps, among
+     them the VTT parameter of a constructor or destructor variant that
+     takes one, which the wrapper, being neither, does not announce.  */
+  tree dst_fn = dst;
+  if (DECL_IS_WRAPPER_FN_P (dst))
+    if (tree orig = get_orig_func_for_wrapper (dst))
+      dst_fn = orig;
+  int dst_num_artificial_args = num_artificial_parms_for (dst_fn);
 
   for (tree sp = DECL_ARGUMENTS (src), dp = DECL_ARGUMENTS (dst);
        sp || dp;
