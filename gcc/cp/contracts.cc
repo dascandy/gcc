@@ -8059,6 +8059,120 @@ maybe_contract_wrap_call (tree fndecl, tree call, bool is_virtual_dispatch)
   return wrapcall;
 }
 
+/* True if WRAPDECL, a caller-side contract wrapper of FNDECL, may call
+   FNDECL's postcheck entry point (-fcontract-postcheck-entry): it checks
+   every precondition of FNDECL with a semantic that does not let the call
+   proceed after a violation -- enforce, quick_enforce or noexcept_enforce,
+   chosen at compile time.  A semantic chosen at run time might be one that
+   continues, and the wrapper of a virtual call dispatches to whatever
+   function overrides FNDECL.  */
+
+static bool
+wrapper_calls_postcheck_entry_p (tree wrapdecl, tree fndecl)
+{
+  if (wrapper_for_virtual_dispatch_p (wrapdecl)
+      || !contract_postcheck_entry_p (fndecl))
+    return false;
+
+  tree specs = get_fn_contract_specifiers (DECL_ORIGIN (fndecl));
+  unsigned nspecs = specs ? (unsigned) TREE_VEC_LENGTH (specs) : 0;
+  bool any = false;
+  for (unsigned position = 0; position < nspecs; position++)
+    {
+      if (!PRECONDITION_P (TREE_VEC_ELT (specs, position)))
+	continue;
+      any = true;
+      if (get_wrapper_dyn_at (wrapdecl, position))
+	return false;
+      switch (get_wrapper_tuple_at (wrapdecl, position))
+	{
+	case CES_ENFORCE:
+	case CES_QUICK:
+	case CES_NOEXCEPT_ENFORCE:
+	  break;
+	default:
+	  return false;
+	}
+    }
+  return any;
+}
+
+/* Data for retarget_wrapper_call_r.  */
+
+struct retarget_wrapper_call_data
+{
+  tree wrapdecl;
+  tree from;
+  tree to;
+};
+
+/* True if ARG, an argument of a call in the genericized body of WRAPDECL,
+   passes on PARM, one of WRAPDECL's parameters, as it is.  */
+
+static bool
+forwards_parm_p (tree arg, tree parm)
+{
+  STRIP_NOPS (arg);
+  /* An argument of an empty class type is passed as an EMPTY_CLASS_EXPR
+     (build_call_a): there is nothing to pass on.  */
+  if (TREE_CODE (arg) == EMPTY_CLASS_EXPR)
+    return same_type_ignoring_top_level_qualifiers_p (TREE_TYPE (arg),
+						       TREE_TYPE (parm));
+  if (TREE_CODE (arg) == INDIRECT_REF || TREE_CODE (arg) == ADDR_EXPR)
+    {
+      arg = TREE_OPERAND (arg, 0);
+      STRIP_NOPS (arg);
+    }
+  return arg == parm;
+}
+
+static tree
+retarget_wrapper_call_r (tree *tp, int *walk_subtrees, void *data)
+{
+  retarget_wrapper_call_data *d = (retarget_wrapper_call_data *) data;
+  tree t = *tp;
+  if (TYPE_P (t))
+    {
+      *walk_subtrees = 0;
+      return NULL_TREE;
+    }
+  if (TREE_CODE (t) != CALL_EXPR && TREE_CODE (t) != AGGR_INIT_EXPR)
+    return NULL_TREE;
+  if (cp_get_callee_fndecl_nofold (t) != d->from)
+    return NULL_TREE;
+
+  /* The call that passes the wrapper's arguments on, rather than a call of
+     the same function that a predicate makes.  */
+  int nargs = (TREE_CODE (t) == CALL_EXPR
+	       ? call_expr_nargs (t) : aggr_init_expr_nargs (t));
+  int i = 0;
+  for (tree parm = DECL_ARGUMENTS (d->wrapdecl); parm;
+       parm = DECL_CHAIN (parm), i++)
+    if (i >= nargs
+	|| !forwards_parm_p (TREE_CODE (t) == CALL_EXPR
+			     ? CALL_EXPR_ARG (t, i) : AGGR_INIT_EXPR_ARG (t, i),
+			     parm))
+      return NULL_TREE;
+
+  if (TREE_CODE (t) == CALL_EXPR)
+    CALL_EXPR_FN (t) = build_address (d->to);
+  else
+    AGGR_INIT_EXPR_FN (t) = build_address (d->to);
+  return t;
+}
+
+/* Make WRAPDECL, a caller-side contract wrapper of FROM whose body has been
+   genericized, call TO instead where it passes its arguments on to FROM.  */
+
+static void
+retarget_wrapper_call (tree wrapdecl, tree from, tree to)
+{
+  retarget_wrapper_call_data d = { wrapdecl, from, to };
+  tree found = walk_tree_without_duplicates (&DECL_SAVED_TREE (wrapdecl),
+					     retarget_wrapper_call_r, &d);
+  gcc_checking_assert (found);
+}
+
 /* Define a single wrapper function WRAPDECL that wraps callee FNDECL.
    This generates code for client-side contract check wrappers and the
    noexcept wrapper around the contract violation handler.  Returns true
@@ -8201,6 +8315,23 @@ define_one_contract_wrapper_func (tree fndecl, tree wrapdecl)
   finish_function_body (body);
   tree fn_done = finish_function (/*inline_p=*/false);
   TREE_THIS_VOLATILE (wrapdecl) = noreturn_p;
+
+  /* Having checked the preconditions, the wrapper may skip the callee's
+     checks of them.  Only the genericized body changes: constant
+     evaluation still calls FNDECL.  */
+  if (wrapper_calls_postcheck_entry_p (wrapdecl, fndecl))
+    {
+      /* Genericization makes a call of a block-scope extern declaration a
+	 call of the namespace-scope declaration it aliases, whose postcheck
+	 entry point the definition provides.  */
+      tree callee = fndecl;
+      if (DECL_LOCAL_DECL_P (callee))
+	if (tree alias = DECL_LOCAL_DECL_ALIAS (callee))
+	  if (alias != error_mark_node)
+	    callee = alias;
+      retarget_wrapper_call (wrapdecl, callee, get_postcheck_entry (callee));
+    }
+
   expand_or_defer_fn (fn_done);
   return true;
 }
@@ -15833,8 +15964,11 @@ place_override_shadows_alone (override_shadows *ov)
    Every non-virtual function with a precondition gets two entry points.  F,
    with the usual symbol, checks the preconditions and then jumps to P, the
    same symbol with ".postcheck" appended, which holds the rest of the body
-   and checks the postconditions.  Taking F's address always yields F,
-   because P is a separate declaration that nothing in the program can
+   and checks the postconditions.  A caller-side contract wrapper that has
+   checked every precondition itself, in a way that does not let the call
+   proceed after a violation, calls P directly
+   (wrapper_calls_postcheck_entry_p).  Taking F's address always yields
+   F, because P is a separate declaration that nothing in the program can
    name.
 
    Whether P exists depends only on the declaration (contract_postcheck_entry_p),
@@ -16251,6 +16385,12 @@ contract_split_postcheck_entry (tree fn)
   if (DECL_SAVED_TREE (p))
     return;
   sync_postcheck_decl (p, fn);
+  /* P may have been declared before FN was defined -- by a caller-side
+     wrapper defined during constant evaluation, before the template FN
+     is an instantiation of was instantiated -- when FN had no result yet
+     and the parameters of its declaration.  Give it FN's own now, before
+     its function is set up.  */
+  copy_postcheck_parms (p, fn, NULL);
 
   tree_stmt_iterator mit;
   bool marker = find_postcheck_marker (DECL_SAVED_TREE (fn), &mit) != NULL;

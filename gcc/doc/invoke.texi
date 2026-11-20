@@ -3506,10 +3506,19 @@ coroutine, whose preconditions are checked before its ramp function does
 anything else.  Taking the address of the function always yields the
 first entry point.
 
+A call made through a caller-side contract check
+(@option{-fcontracts-client-check}, or a configuration entry with a
+@code{caller} key) goes straight to the second entry point when every
+precondition is checked at the call with a semantic that does not let the
+call proceed after a violation: @code{enforce}, @code{quick_enforce} or
+@code{noexcept_enforce}, chosen at compile time.  Otherwise, and for a
+virtual call, it calls the function as usual.
+
 The two entry points have sections of their own under
 @option{-ffunction-sections}, and COMDAT groups of their own for an inline
 function or a template instantiation, so that the linker can discard the
-first entry point when nothing calls it.  GCC outputs the first entry point
+first entry point when every call goes to the second, as when all callers
+check the preconditions themselves.  GCC outputs the first entry point
 immediately before the second, never inlines the second into the first,
 and makes the jump the last instruction of the first, so that where the
 two end up in the same section a later pass can remove the jump and let
