@@ -1278,6 +1278,9 @@ UrlSuffix(gcc/C_002b_002b-Dialect-Options.html#index-fcontract-checks-outlined)
 fcontract-postcheck-entry
 UrlSuffix(gcc/C_002b_002b-Dialect-Options.html#index-fcontract-postcheck-entry)
 
+ffast-contracts
+UrlSuffix(gcc/C_002b_002b-Dialect-Options.html#index-ffast-contracts)
+
 fcontract-analysis-semantic=
 UrlSuffix(gcc/C_002b_002b-Dialect-Options.html#index-fcontract-analysis-semantic)
 

@@ -229,6 +229,7 @@ in the following sections.
 -fcontract-evaluation-semantic=@r{[}ignore@r{|}observe@r{|}enforce@r{|}quick_enforce@r{|}assume@r{|}noexcept_enforce@r{|}noexcept_observe@r{|}prove@r{|}diagnose@r{]}
 -fcontract-checks-outlined
 -fcontract-postcheck-entry
+-ffast-contracts
 -fcontract-disable-optimized-checks
 -fno-contract-bypass-rethrowing-local-handler
 -fcontract-comment-from-expression
@@ -3548,6 +3549,54 @@ without the precondition checks, at the second.  With
 @option{-fcontract-checks-outlined}, a function whose postconditions have
 captures gets an alias.
 
+This option is enabled by @option{-ffast-contracts}.
+
+@opindex ffast-contracts
+@opindex fno-fast-contracts
+@item -ffast-contracts
+Promise that every translation unit in the program is compiled with the
+same contract options, and let GCC optimize on the basis of that promise.
+The promise covers every option whose name begins with
+@option{-fcontract}, including the contract configuration, and
+@option{-ffast-contracts} itself.  It covers every translation unit that
+defines or calls a function, or instantiates an inline function or
+template, that this translation unit uses: libraries included.  With the
+promise kept, how a contract assertion is evaluated depends only on the
+source, never on the translation unit that evaluates it.
+
+Without this option, GCC supports programs whose translation units are
+compiled with different contract options.  An optimization that relies on
+the promise is only valid if it holds: a program that breaks it, for
+example by linking an object file compiled with a different evaluation
+semantic, or one compiled without @option{-ffast-contracts}, is in the
+same position as a program that mixes @option{-ffast-math} with code
+compiled without it, and contract checks can be skipped or evaluated
+differently from what its options ask for.  GCC does not check the
+promise.
+
+This option enables @option{-fcontract-postcheck-entry}, which its
+optimizations build on: a caller that has checked a function's
+preconditions itself calls the second entry point, while the first stays
+for calls through a function pointer and for callers that know nothing of
+contracts, such as code written in other languages.  It is an error to
+combine it with @option{-fno-contract-postcheck-entry}.
+
+The checks are divided between caller and callee: callers check the
+preconditions and callees the postconditions.  This option therefore sets
+@option{-fcontracts-client-check=pre}, and it is an error to combine it
+with @option{-fcontracts-client-check=none},
+@option{-fcontracts-client-check=all} or
+@option{-fcontracts-definition-check=off}.
+
+The optimizations apply only where contract assertions are enforced, so
+it is an error to use this option unless
+@option{-fcontract-evaluation-semantic=} is @code{enforce} (the default),
+@code{quick_enforce} or @code{noexcept_enforce}.
+
+Beyond @option{-fcontract-postcheck-entry}, this option currently enables
+no optimizations.  It has no effect without @option{-fcontracts}.  The
+name of this option is preliminary and may change.
+
 @opindex fcontract-analysis-semantic
 @item -fcontract-analysis-semantic=@var{semantic}
 Set the semantic of the analysis evaluation of every contract assertion
@@ -3799,12 +3848,16 @@ The value of @var{mode} determines which contract checks are made:
 
 '@code{all}' Both pre and post-conditions are checked at the caller/client side.
 
+@option{-ffast-contracts} sets this option to @samp{pre}.
+
 @opindex fcontracts-definition-check
 @item -fcontracts-definition-check=@var{mode}
 This option introduces the ability to disable callee/definition-side checks,
 which are otherwise enabled by default when the contracts feature is active.
 
 The variable @var{mode} has the values '@code{on}' and '@code{off}'.
+
+@option{-ffast-contracts} requires @samp{on}.
 
 @opindex fcontract-group-evaluation-semantic
 @item -fcontract-group-evaluation-semantic=@var{group}:@var{semantic}@r{[},@dots{}@r{]}

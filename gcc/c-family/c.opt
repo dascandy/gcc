@@ -1968,6 +1968,11 @@ fcontract-postcheck-entry
 C++ ObjC++ Var(flag_contract_postcheck_entry) Init(0)
 Give each non-virtual function with a precondition a second entry point, named with a .postcheck suffix, that skips the precondition checks.  Changes the ABI.
 
+; The name -ffast-contracts is preliminary.
+ffast-contracts
+C++ ObjC++ Var(flag_fast_contracts) Init(0)
+Assume that every translation unit in the program is compiled with the same contract options, and optimize on that basis.  Implies -fcontract-postcheck-entry and -fcontracts-client-check=pre, and requires an enforcing contract evaluation semantic.
+
 ; D4405: the semantics the analysis evaluation can have.
 
 Enum

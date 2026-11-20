@@ -45,7 +45,8 @@ callerside-checks/, outline-checks/, definition-checks/
 Everything else has a descriptive name, usually starting with what it
 tests: contract-*, lambda-*, postcondition-*, constexpr-*, ce-* (constant
 evaluation under a configured semantic), postcheck-entry-*
-(-fcontract-postcheck-entry), and so on.
+(-fcontract-postcheck-entry), fast-contracts-* (-ffast-contracts), and so
+on.
 
 Options
 -------

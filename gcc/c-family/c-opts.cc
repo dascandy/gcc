@@ -1466,6 +1466,7 @@ c_common_post_options (const char **pfilename)
 				  flag_contract_checks_outlined, true),
       CONTRACTS_DEPENDENT_OPTION ("contract-postcheck-entry",
 				  flag_contract_postcheck_entry, true),
+      CONTRACTS_DEPENDENT_OPTION ("fast-contracts", flag_fast_contracts, true),
       CONTRACTS_DEPENDENT_OPTION ("contract-disable-optimized-checks",
 				  flag_contract_disable_optimized_checks, true),
       CONTRACTS_DEPENDENT_OPTION ("contract-bypass-rethrowing-local-handler",
@@ -1499,6 +1500,46 @@ c_common_post_options (const char **pfilename)
 	if (opt.given && opt.on && (c_dialect_cxx () || !opt.cxx_only))
 	  warning (0, "%qs has no effect without %<-fcontracts-p4405%>",
 		   opt.name);
+
+    /* -ffast-contracts builds on the postcheck entry points: a caller that
+       has checked the preconditions itself calls the second entry point,
+       and the first stays for function pointers and for callers that know
+       nothing of contracts.  Callers check the preconditions
+       (-fcontracts-client-check=pre) and callees the postconditions
+       (-fcontracts-definition-check=on).  Its optimizations rely on every
+       precondition being enforced, so the global evaluation semantic must
+       enforce.  */
+    if (contracts_on && flag_fast_contracts)
+      {
+	if (global_options_set.x_flag_contract_postcheck_entry
+	    && !flag_contract_postcheck_entry)
+	  error ("%<-ffast-contracts%> requires %<-fcontract-postcheck-entry%>");
+	flag_contract_postcheck_entry = 1;
+	/* The values of -fcontracts-client-check=: none, pre, all.  */
+	if (global_options_set.x_flag_contract_client_check
+	    && flag_contract_client_check != 1)
+	  error ("%<-ffast-contracts%> requires %<-fcontracts-client-check=pre%>,"
+		 " not %<-fcontracts-client-check=%s%>",
+		 flag_contract_client_check == 0 ? "none" : "all");
+	flag_contract_client_check = 1;
+	if (!flag_contracts_definition_check)
+	  error ("%<-ffast-contracts%> requires "
+		 "%<-fcontracts-definition-check=on%>");
+	switch (flag_contract_evaluation_semantic)
+	  {
+	  case CES_ENFORCE:
+	  case CES_QUICK:
+	  case CES_NOEXCEPT_ENFORCE:
+	    break;
+	  default:
+	    error ("%<-ffast-contracts%> only works with an enforcing contract "
+		   "evaluation semantic (%<enforce%>, %<quick_enforce%> or "
+		   "%<noexcept_enforce%>), not %<-fcontract-evaluation-semantic"
+		   "=%s%>",
+		   contract_semantic_name ((contract_evaluation_semantic)
+					   flag_contract_evaluation_semantic));
+	  }
+      }
   }
 
   /* EnabledBy unfortunately can't specify value to use if set and
