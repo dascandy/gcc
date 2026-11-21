@@ -12825,6 +12825,7 @@ void
 tsubst_contract_specifiers (tree specifiers, tree decl, tree args,
 			    tsubst_flags_t complain, tree in_decl)
 {
+  (void)args;
   if (!specifiers)
     {
       if (flag_contracts)
